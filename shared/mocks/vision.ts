@@ -24,7 +24,7 @@ export function createMockVision(): AppModule {
           confidence: 0.81,
           tripMs,
           expiresMs: tripMs + 1500,
-          clipKey: 'pedestrian',
+          clipKey: 'pedestrianNearby',
         });
       }, 100);
     },

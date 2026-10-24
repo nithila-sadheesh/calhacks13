@@ -36,7 +36,7 @@ function alert(over: Partial<WebcamAlert> = {}): WebcamAlert {
     confidence: 0.81,
     tripMs: 0,
     expiresMs: 1500,
-    clipKey: 'pedestrian',
+    clipKey: 'pedestrianNearby',
     ...over,
   };
 }
@@ -80,7 +80,7 @@ describe('speaking', () => {
         text: 'Stop sign ahead. Prepare for a complete stop.',
         priority: 1,
         expiresMs: 10000,
-        fallbackClipKey: 'fallbackStopSign',
+        fallbackClipKey: 'stopSign',
       },
     ]);
     const spoken = h.effects.find((e) => e.type === 'decision');
@@ -146,7 +146,7 @@ describe('rule: preemption', () => {
     h.send({ type: 'alert', alert: alert({ tripMs: 2000, expiresMs: 3500 }) }, 2000);
     expect(h.speaks.map((s) => [s.sourceId, s.priority, s.clipKey])).toEqual([
       ['cue-1', 1, undefined],
-      ['alert-1', 0, 'pedestrian'],
+      ['alert-1', 0, 'pedestrianNearby'],
     ]);
     const interrupted = h.effects.find(
       (e) => e.type === 'decision' && e.decision.action === 'interrupted',

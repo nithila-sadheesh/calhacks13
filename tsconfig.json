@@ -17,5 +17,14 @@
     "noEmit": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["app", "shared", "server", "scripts", "tests", "vite.config.ts", "eslint.config.js"]
+  "include": [
+    "app",
+    "shared",
+    "api",
+    "server",
+    "scripts",
+    "tests",
+    "vite.config.ts",
+    "eslint.config.js"
+  ]
 }

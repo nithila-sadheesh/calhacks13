@@ -24,10 +24,10 @@ export const CAMERA_PAUSED = {
 };
 
 const FALLBACK_CLIPS: Partial<Record<MapFeatureKind, string>> = {
-  turnLeft: 'fallbackTurn',
-  turnRight: 'fallbackTurn',
-  stopSign: 'fallbackStopSign',
-  crosswalk: 'fallbackCrosswalk',
+  turnLeft: 'turn',
+  turnRight: 'turn',
+  stopSign: 'stopSign',
+  crosswalk: 'crosswalk',
 };
 
 export type Item = {

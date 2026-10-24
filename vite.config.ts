@@ -1,6 +1,6 @@
 // Vite config. `fixtures/` is the public dir, so the app fetches
 // /demo-drive/*.json, /demo-drive/video.mp4 and /audio/* at runtime.
-// In dev, /api/<name> runs the web-standard handler exported from server/<name>.ts, the same
+// In dev, /api/<name> runs the web-standard handler exported from api/<name>.ts, the same
 // handler Vercel serves from api/<name>.ts in production. .env is loaded for those handlers only.
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,7 +19,7 @@ function devApi(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const name = req.url?.match(/^\/api\/([\w-]+)(?:\?|$)/)?.[1];
         if (!name) return next();
-        const file = `/server/${name}.ts`;
+        const file = `/api/${name}.ts`;
         if (!existsSync(resolve(server.config.root, `.${file}`))) {
           res.statusCode = 404;
           return res.end();
