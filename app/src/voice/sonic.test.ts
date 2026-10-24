@@ -52,6 +52,35 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('Sonic session transport', () => {
+  it('warm opens the session ahead of the first request, which then reuses it', async () => {
+    const s = setup();
+    s.transport.warm();
+    await flush();
+    expect(s.fetcher).toHaveBeenCalledTimes(1);
+    const socket = Socket.instances[0]!;
+    socket.open();
+    await flush();
+    expect(socket.sent).toEqual([]);
+    expect(s.sent).not.toHaveBeenCalled();
+    await s.transport.send('one', 'Turn ahead.');
+    expect(Socket.instances).toHaveLength(1);
+    expect(s.fetcher).toHaveBeenCalledTimes(1);
+    expect(socket.sent[0]).toMatchObject({ context_id: 'one', transcript: 'Turn ahead.' });
+  });
+
+  it('a failed warm-up is retried by the first request', async () => {
+    const s = setup();
+    s.fetcher.mockRejectedValueOnce(new Error('offline'));
+    s.transport.warm();
+    await flush();
+    const pending = s.transport.send('one', 'Turn ahead.');
+    await flush();
+    expect(s.fetcher).toHaveBeenCalledTimes(2);
+    Socket.instances[0]!.open();
+    await pending;
+    expect(s.sent).toHaveBeenCalledWith('Turn ahead.');
+  });
+
   it('reuses one socket, decodes PCM, sends safe configuration and reports text only when sent', async () => {
     const s = setup();
     const pending = s.transport.send('one', 'Crosswalk ahead. Scan both sides.');

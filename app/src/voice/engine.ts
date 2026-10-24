@@ -1,5 +1,8 @@
 import type { Bus, SpeakRequest, TripClock } from '../../../shared/types.ts';
+import { isSafeToSpeak } from '../../../shared/safeWording.ts';
 import { approvedText, CLIP_TEXT, fallbackKey, type ClipKey } from './config.ts';
+
+const ROUTE_FALLBACKS: readonly ClipKey[] = ['turn', 'stopSign', 'crosswalk'];
 import type { AudioPlayer, Playback } from './player.ts';
 import type { SonicMessage, SonicTransport } from './sonic.ts';
 
@@ -67,11 +70,14 @@ export function createVoiceEngine(options: {
       return;
     }
     const expectedKey = fallbackKey(item.request.text);
-    // Only the approved fallback for this sentence may be selected by a request.
-    const key =
-      item.request.fallbackClipKey === undefined || item.request.fallbackClipKey === expectedKey
+    const requested = item.request.fallbackClipKey;
+    // An approved sentence may only fall back to its own clip. Generated wording has no template
+    // match, so it may take a route fallback (never a warning clip) chosen by the arbiter.
+    const key = expectedKey
+      ? requested === undefined || requested === expectedKey
         ? expectedKey
-        : undefined;
+        : undefined
+      : ROUTE_FALLBACKS.find((k) => k === requested);
     const samples = key && clips.get(key);
     if (!samples) {
       finish(item, false);
@@ -123,7 +129,7 @@ export function createVoiceEngine(options: {
     speak(request: SpeakRequest) {
       if (stopped) return;
       if (
-        !approvedText(request.text) ||
+        !(approvedText(request.text) || isSafeToSpeak(request.text)) ||
         !player.ready() ||
         (request.expiresMs !== undefined && clock.nowMs() > request.expiresMs)
       ) {

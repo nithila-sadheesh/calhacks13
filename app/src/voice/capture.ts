@@ -1,9 +1,42 @@
+import { enterCaptureSession } from './audioSession.ts';
 export type CaptureSession = { sampleRate: number; stop(): void };
+
+const WORKLET_URL = new URL('./captureWorklet.js?no-inline', import.meta.url);
+type Shared = { context: AudioContext; loaded: Promise<void> };
+let shared: Shared | undefined;
+
+// One capture context per page with the worklet loaded once, so a tap only has to open the
+// microphone. Rebuilding both on every tap cost ~0.3 s, and speech in that gap was lost.
+function sharedContext(): Shared {
+  if (shared && shared.context.state !== 'closed') return shared;
+  const context = new AudioContext({ sampleRate: 48000 });
+  const loaded = context.audioWorklet.addModule(WORKLET_URL);
+  const entry = { context, loaded };
+  shared = entry;
+  // A failed load starts over with a fresh context on the next tap.
+  loaded.catch(() => {
+    if (shared === entry) shared = undefined;
+    if (context.state !== 'closed') void context.close().catch(() => {});
+  });
+  return entry;
+}
+
+// Loads the capture worklet ahead of the first tap. No microphone is opened.
+export function prepareCapture(): void {
+  sharedContext();
+}
+
+export function disposeCapture(): void {
+  const entry = shared;
+  shared = undefined;
+  if (entry && entry.context.state !== 'closed') void entry.context.close().catch(() => {});
+}
+
 export async function openCapture(
   onSamples: (samples: Float32Array) => void,
   signal: AbortSignal,
 ): Promise<CaptureSession> {
-  const context = new AudioContext({ sampleRate: 48000 });
+  const { context, loaded } = sharedContext();
   // Request resume in the originating pointer/key gesture, before any permission wait.
   const resumed = context.resume();
   void resumed.catch(() => {});
@@ -11,17 +44,21 @@ export async function openCapture(
   let source: MediaStreamAudioSourceNode | undefined;
   let node: AudioWorkletNode | undefined;
   let stopped = false;
+  // Before getUserMedia: WebKit rejects capture under the 'playback' session the player uses.
+  const restoreSession = enterCaptureSession();
   const stop = () => {
     if (stopped) return;
     stopped = true;
     stream?.getTracks().forEach((track) => track.stop());
+    restoreSession();
     if (node) {
       node.port.onmessage = null;
       node.port.close();
       node.disconnect();
     }
     source?.disconnect();
-    if (context.state !== 'closed') void context.close().catch(() => {});
+    // Kept for the next tap; suspended so it costs nothing while the mic is closed.
+    if (context.state === 'running') void context.suspend().catch(() => {});
   };
   signal.addEventListener('abort', stop, { once: true });
   try {
@@ -36,7 +73,7 @@ export async function openCapture(
       throw new Error('Capture cancelled');
     }
     await resumed;
-    await context.audioWorklet.addModule(new URL('./captureWorklet.js?no-inline', import.meta.url));
+    await loaded;
     signal.throwIfAborted();
     node = new AudioWorkletNode(context, 'voice-capture');
     node.port.onmessage = (event: MessageEvent<unknown>) => {

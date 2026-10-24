@@ -1,4 +1,4 @@
-// App entry. Creates the one bus, picks real or mock modules (`?mock=map,vision,voice,arbiter`,
+// App entry. Creates the one bus, picks real or mock modules (`?mock=map,vision,voice,arbiter,assistant`,
 // any subset), turns on the debug event log, and mounts the UI. The UI starts the modules once
 // the drive screen's <video> exists.
 import { createRoot } from 'react-dom/client';
@@ -7,6 +7,7 @@ import { log } from '../../shared/log.ts';
 import { mockFactories } from '../../shared/mocks/index.ts';
 import type { AppModule } from '../../shared/types.ts';
 import { arbiterModule } from './arbiter/index.ts';
+import { assistantModule } from './assistant/index.ts';
 import { mapModule } from './map/index.ts';
 import { App } from './ui/App.tsx';
 import './ui/styles.css';
@@ -14,7 +15,7 @@ import { visionModule } from './vision/index.ts';
 import { voiceModule } from './voice/index.ts';
 
 const mocked = new Set(new URLSearchParams(location.search).get('mock')?.split(',') ?? []);
-const real: AppModule[] = [mapModule, visionModule, voiceModule, arbiterModule];
+const real: AppModule[] = [mapModule, visionModule, voiceModule, arbiterModule, assistantModule];
 const modules = real.map((m) => (mocked.has(m.name) ? mockFactories[m.name]() : m));
 
 const bus = createBus();

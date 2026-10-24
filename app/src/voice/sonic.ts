@@ -6,6 +6,8 @@ export type SonicMessage =
   | { id: string; type: 'done' }
   | { id: string; type: 'error' };
 export type SonicTransport = {
+  // Opens the session ahead of the first request. Best effort: send() connects if this failed.
+  warm(): void;
   send(id: string, text: string): Promise<void>;
   cancel(id: string): void;
   close(): void;
@@ -109,6 +111,11 @@ export function createSonicTransport(
     }
   }
   return {
+    warm() {
+      void connect().catch(() => {
+        /* The first send() retries the connection. */
+      });
+    },
     async send(id, text) {
       const ws = await connect();
       if (stopped || cancelled.has(id)) return;

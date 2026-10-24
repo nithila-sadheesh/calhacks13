@@ -10,7 +10,7 @@ import { mapState } from './mapState.ts';
 
 const STATUS_NOTES: Partial<Record<EngineStatus, string>> = {
   waiting: 'Waiting for the first position.',
-  noPosition: 'No GPS data at this point in the drive.',
+  noPosition: 'No location available right now.',
   noRoute: 'No route loaded.',
   offRoute: 'Position is off the planned route. Cues paused.',
   backward: 'GPS jumped backward. Cues paused.',

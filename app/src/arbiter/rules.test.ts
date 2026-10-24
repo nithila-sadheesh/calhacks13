@@ -1,8 +1,14 @@
 // One describe per rule in the arbiter table in docs/DESIGN.md (section "Rohit").
 import { describe, expect, it } from 'vitest';
-import type { ArbiterDecision, MapCue, WebcamAlert } from '../../../shared/types.ts';
+import type {
+  ArbiterDecision,
+  AssistantReply,
+  MapCue,
+  WebcamAlert,
+} from '../../../shared/types.ts';
 import {
   ALERT_COOLDOWN_MS,
+  ANSWER_TTL_MS,
   CAMERA_PAUSED,
   type ArbiterState,
   type Effect,
@@ -432,5 +438,109 @@ describe('pause and watchdog', () => {
     h.send({ type: 'tick' }, 60000);
     expect(h.currentId).toBeUndefined();
     expect(h.effects.some((e) => e.type === 'log')).toBe(true);
+  });
+});
+
+describe('assistant', () => {
+  const reply = (over: Partial<AssistantReply> = {}): AssistantReply => ({
+    id: 'answer-1',
+    queryId: 'q-1',
+    text: 'The stop sign is about 60 meters ahead.',
+    tripMs: 0,
+    ...over,
+  });
+
+  it('speaks Claude wording for a cue when it arrived first, the template otherwise', () => {
+    const h = new Harness();
+    h.send(
+      {
+        type: 'cueWording',
+        wording: { featureId: 'stop-1', text: 'Stop sign on Oxford. Plan a full stop.' },
+      },
+      0,
+    );
+    h.send({ type: 'cue', cue: cue() }, 1000);
+    expect(h.speaks[0]).toMatchObject({
+      text: 'Stop sign on Oxford. Plan a full stop.',
+      fallbackClipKey: 'stopSign',
+    });
+    expect(h.decisions[0]).toEqual(['cue-1', 'spoken', 'cue window open (Claude wording)']);
+    h.end(3000);
+    h.send(
+      {
+        type: 'cue',
+        cue: cue({
+          id: 'cue-2',
+          featureId: 'turn-1',
+          featureKind: 'turnLeft',
+          text: 'Left turn ahead onto Main. Check for pedestrians before turning.',
+        }),
+      },
+      8000,
+    );
+    expect(h.speaks[1]?.text).toBe(
+      'Left turn ahead onto Main. Check for pedestrians before turning.',
+    );
+  });
+
+  it('a reset forgets wording from the previous pass', () => {
+    const h = new Harness();
+    h.send({ type: 'cueWording', wording: { featureId: 'stop-1', text: 'Claude wording.' } }, 0);
+    h.send({ type: 'reset' }, 100);
+    h.send({ type: 'cue', cue: cue() }, 1000);
+    expect(h.speaks[0]?.text).toBe(cue().text);
+  });
+
+  it('speaks an answer, and a vision warning still interrupts it', () => {
+    const h = new Harness();
+    h.send({ type: 'answer', reply: reply() }, 1000);
+    expect(h.speaks[0]).toMatchObject({
+      sourceId: 'answer-1',
+      text: 'The stop sign is about 60 meters ahead.',
+      priority: 1,
+    });
+    h.send({ type: 'alert', alert: alert({ tripMs: 1500, expiresMs: 3000 }) }, 1500);
+    expect(h.decisions).toContainEqual(['answer-1', 'interrupted', 'preempted by alert']);
+    expect(h.speaks[1]?.sourceId).toBe('alert-1');
+  });
+
+  it('answers while muted, because it was asked for', () => {
+    const h = new Harness();
+    h.send({ type: 'voice', kind: 'mute' }, 0);
+    h.send({ type: 'answer', reply: reply() }, 1000);
+    expect(h.speaks.map((s) => s.sourceId)).toEqual(['answer-1']);
+  });
+
+  it('a repeat action replays the last cue and speaks nothing else', () => {
+    const h = new Harness();
+    h.send({ type: 'cue', cue: cue() }, 1000);
+    h.end(3000);
+    h.send({ type: 'answer', reply: reply({ action: 'repeat', text: 'Repeating.' }) }, 5000);
+    expect(h.speaks.map((s) => s.text)).toEqual([cue().text, cue().text]);
+  });
+
+  it('a mute action mutes and speaks its confirmation; later reminders are dropped', () => {
+    const h = new Harness();
+    h.send(
+      {
+        type: 'answer',
+        reply: reply({ action: 'mute', text: 'Reminders muted. Warnings still play.' }),
+      },
+      1000,
+    );
+    expect(h.state.muted).toBe(true);
+    expect(h.speaks[0]?.text).toBe('Reminders muted. Warnings still play.');
+    h.end(3000);
+    h.send({ type: 'cue', cue: cue() }, 9000);
+    expect(h.decisions).toContainEqual(['cue-1', 'dropped', 'muted']);
+  });
+
+  it('drops an answer that waited past its lifetime', () => {
+    const h = new Harness();
+    h.send({ type: 'tripState', state: 'paused' }, 0);
+    h.send({ type: 'answer', reply: reply() }, 1000);
+    h.send({ type: 'tripState', state: 'playing' }, 1000 + ANSWER_TTL_MS + 1);
+    expect(h.decisions).toContainEqual(['answer-1', 'dropped', 'expired']);
+    expect(h.speaks).toEqual([]);
   });
 });

@@ -53,10 +53,37 @@ export type ArbiterDecision = {
 };
 
 export type DataSent = {
-  destination: 'cartesia-tts' | 'cartesia-stt';
-  summary: string; // e.g. 'text: "Stop sign ahead..."' or 'mic audio, 2.1 s'
+  destination: 'cartesia-tts' | 'cartesia-stt' | 'claude';
+  summary: string; // e.g. 'text: "Stop sign ahead..."', 'mic audio, 2.1 s' or 'question: "..."'
   tripMs: number;
 };
+
+// A route feature entering the look-ahead range (once per feature per pass), well before its cue
+// window, so the assistant has time to word the reminder.
+export type FeatureAhead = {
+  featureId: string;
+  featureKind: MapFeatureKind;
+  street?: string;
+  distM: number;
+  speedMps: number;
+  tripMs: number;
+};
+
+// Free-form speech that is not one of the fixed commands, for the assistant to answer.
+export type VoiceQuery = { id: string; transcript: string; tripMs: number };
+
+// The assistant's answer: text to speak (already safety-checked) and/or a fixed action.
+export type AssistantReply = {
+  id: string;
+  queryId: string;
+  text?: string;
+  action?: 'repeat' | 'mute' | 'unmute';
+  tripMs: number;
+};
+
+// Claude-written wording for a route reminder. Replaces the template text when that feature's
+// cue fires; the template is used whenever no wording arrived in time.
+export type CueWording = { featureId: string; text: string };
 
 // The comment after each event names its only publisher. Anyone may subscribe.
 export type Events = {
@@ -71,7 +98,11 @@ export type Events = {
   speechStarted: { id: string; firstAudibleMs: number }; // Nithila
   speechEnded: { id: string; interrupted: boolean }; // Nithila
   voiceCommand: { kind: 'repeat' | 'mute' | 'unmute'; transcript: string }; // Nithila
-  dataSent: DataSent; // Nithila
+  dataSent: DataSent; // Nithila (Cartesia), assistant (Claude)
+  featureAhead: FeatureAhead; // Jeev
+  voiceQuery: VoiceQuery; // Nithila
+  assistantReply: AssistantReply; // assistant
+  cueWording: CueWording; // assistant
 };
 
 export type EventName = keyof Events;
@@ -84,7 +115,9 @@ export type Bus = {
 };
 
 export type TripClock = {
-  nowMs(): number; // video.currentTime x 1000; track.json already applies its sync offset
+  // Replay: video.currentTime x 1000 (track.json already applies its sync offset).
+  // Live: ms since the trip was started, frozen once it ends.
+  nowMs(): number;
   onReset(cb: (tripMs: number) => void): () => void;
 };
 
@@ -114,7 +147,11 @@ export type Route = { coordinates: Array<[lon: number, lat: number]> };
 
 export type Fixtures = { track: Track; features: MapFeature[]; route: Route };
 
+// 'replay' plays the recorded drive and its track.json; 'live' uses the device camera and GPS.
+export type TripSource = 'replay' | 'live';
+
 export type ModuleContext = {
+  source: TripSource;
   bus: Bus;
   clock: TripClock;
   video: HTMLVideoElement; // owned by Rohit; others read frames/time only
@@ -122,7 +159,7 @@ export type ModuleContext = {
 };
 
 export type AppModule = {
-  name: 'map' | 'vision' | 'voice' | 'arbiter';
+  name: 'map' | 'vision' | 'voice' | 'arbiter' | 'assistant';
   start(ctx: ModuleContext): Promise<void>;
   stop(): void;
 };

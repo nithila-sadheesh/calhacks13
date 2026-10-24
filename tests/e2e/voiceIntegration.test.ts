@@ -37,6 +37,7 @@ it.each(['mock', 'real', 'all-real'] as const)(
     const bus = createBus();
     const resets = new Set<(ms: number) => void>();
     const ctx: ModuleContext = {
+      source: 'replay',
       bus,
       clock: {
         nowMs: () => ms,
@@ -78,6 +79,7 @@ it.each(['mock', 'real', 'all-real'] as const)(
     });
     // Fail streaming to exercise the real engine's bundled network fallback.
     mocks.transport.mockReturnValue({
+      warm: vi.fn(),
       send: vi.fn().mockRejectedValue(new Error('offline')),
       cancel: vi.fn(),
       close: vi.fn(),

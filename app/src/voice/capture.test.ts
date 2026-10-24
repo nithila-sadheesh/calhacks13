@@ -1,20 +1,32 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { openCapture } from './capture.ts';
+import { disposeCapture, openCapture, prepareCapture } from './capture.ts';
 class Context {
   static last: Context;
   state = 'running';
   sampleRate = 48000;
   destination = {};
-  resume = vi.fn(async () => {});
+  resume = vi.fn(async () => {
+    this.state = 'running';
+  });
+  suspend = vi.fn(async () => {
+    this.state = 'suspended';
+  });
   close = vi.fn(async () => {
     this.state = 'closed';
   });
-  audioWorklet = { addModule: vi.fn(async () => {}) };
+  static failLoad = false;
+  audioWorklet = {
+    addModule: vi.fn(async () => {
+      if (Context.failLoad) throw new Error('worklet unavailable');
+    }),
+  };
   source = { connect: vi.fn(), disconnect: vi.fn() };
   createMediaStreamSource = vi.fn(() => this.source);
   constructor() {
     Context.last = this;
+    Context.created++;
   }
+  static created = 0;
 }
 class Worklet {
   static last: Worklet;
@@ -39,7 +51,10 @@ function setup() {
   const samples = vi.fn();
   return { track, stream, media, controller, samples };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  disposeCapture();
+  vi.unstubAllGlobals();
+});
 it('stops tracks, nodes and messages immediately on release', async () => {
   const s = setup();
   const capture = await openCapture(s.samples, s.controller.signal);
@@ -68,11 +83,31 @@ it('stops a permission grant arriving after cancellation without building the au
   expect(s.track.stop).toHaveBeenCalledTimes(1);
   expect(Context.last.createMediaStreamSource).not.toHaveBeenCalled();
 });
-it('cleans up tracks when loading the worklet fails', async () => {
+it('cleans up tracks when loading the worklet fails, and starts over on the next tap', async () => {
   const s = setup();
-  const pending = openCapture(s.samples, s.controller.signal);
-  Context.last.audioWorklet.addModule.mockRejectedValueOnce(new Error('worklet unavailable'));
-  await expect(pending).rejects.toThrow('worklet unavailable');
+  Context.created = 0;
+  Context.failLoad = true;
+  await expect(openCapture(s.samples, s.controller.signal)).rejects.toThrow('worklet unavailable');
   expect(s.track.stop).toHaveBeenCalledTimes(1);
   expect(Context.last.close).toHaveBeenCalledTimes(1);
+  Context.failLoad = false;
+  const capture = await openCapture(s.samples, new AbortController().signal);
+  expect(Context.created).toBe(2);
+  capture.stop();
+});
+it('keeps one context with the worklet loaded across taps, suspended in between', async () => {
+  const s = setup();
+  Context.created = 0;
+  prepareCapture();
+  const context = Context.last;
+  expect(context.audioWorklet.addModule).toHaveBeenCalledTimes(1);
+  const first = await openCapture(s.samples, s.controller.signal);
+  first.stop();
+  expect(context.suspend).toHaveBeenCalledTimes(1);
+  expect(context.close).not.toHaveBeenCalled();
+  const second = await openCapture(s.samples, new AbortController().signal);
+  expect(Context.created).toBe(1);
+  expect(context.audioWorklet.addModule).toHaveBeenCalledTimes(1);
+  expect(context.resume).toHaveBeenCalledTimes(2);
+  second.stop();
 });

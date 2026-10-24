@@ -1,15 +1,22 @@
 import { log } from '../../../shared/log.ts';
 import type { AppModule, ModuleContext } from '../../../shared/types.ts';
+import { enterPlaybackSession } from './audioSession.ts';
+import { disposeCapture, prepareCapture } from './capture.ts';
+import { readyTone } from './pcm.ts';
 import { createPushToTalk, type MicStatus } from './pushToTalk.ts';
 import { loadClips } from './clips.ts';
 import { createVoiceEngine } from './engine.ts';
 import { createAudioPlayer, type AudioPlayer } from './player.ts';
-import { createSonicTransport } from './sonic.ts';
+import { SAMPLE_RATE } from './config.ts';
+import { createSonicTransport, type SonicTransport } from './sonic.ts';
+
+const READY_TONE = readyTone(SAMPLE_RATE);
 
 export function createVoiceModule(): AppModule & {
   enableAudio(): Promise<void>;
-  pressToTalk(): Promise<void>;
-  releaseToTalk(): void;
+  audioReady(): boolean;
+  onAudioReady(listener: () => void): () => void;
+  toggleTalk(): void;
   cancelTalk(): void;
   micStatus(): MicStatus;
   onMicStatus(listener: () => void): () => void;
@@ -17,7 +24,16 @@ export function createVoiceModule(): AppModule & {
   let mic: ReturnType<typeof createPushToTalk> | undefined;
   let micStatus: MicStatus = 'idle';
   const micListeners = new Set<() => void>();
+  const audioListeners = new Set<() => void>();
+  const notifyAudio = () => audioListeners.forEach((listener) => listener());
   const updateMic = (status: MicStatus) => {
+    // A short chime when recording really starts, so the speaker knows to talk without looking.
+    if (status === 'listening' && micStatus !== 'listening' && player?.ready())
+      player.play(
+        READY_TONE,
+        () => {},
+        () => {},
+      );
     micStatus = status;
     micListeners.forEach((listener) => listener());
   };
@@ -30,6 +46,7 @@ export function createVoiceModule(): AppModule & {
     version++;
     mic?.cancel();
     mic = undefined;
+    disposeCapture();
     controller?.abort();
     off.forEach((dispose) => dispose());
     off = [];
@@ -37,6 +54,7 @@ export function createVoiceModule(): AppModule & {
     else player?.close();
     engine = undefined;
     player = undefined;
+    notifyAudio();
   }
   return {
     name: 'voice',
@@ -48,6 +66,7 @@ export function createVoiceModule(): AppModule & {
         AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
       ).catch(() => new Map());
       if (mine !== version) return;
+      let sonic: SonicTransport | undefined;
       player = createAudioPlayer();
       engine = createVoiceEngine({
         bus: ctx.bus,
@@ -55,15 +74,25 @@ export function createVoiceModule(): AppModule & {
         player,
         clips,
         transport: (receive, disconnect) =>
-          createSonicTransport(receive, disconnect, (text) =>
+          (sonic = createSonicTransport(receive, disconnect, (text) =>
             ctx.bus.emit('dataSent', {
               destination: 'cartesia-tts',
               summary: `text: "${text}"`,
               tripMs: ctx.clock.nowMs(),
             }),
-          ),
+          )),
       });
+      // Connect now, not on the first reminder: a cold token fetch plus the WebSocket handshake
+      // takes about 2.5 s, past the engine's 1.5 s first-audio deadline, so the first reminder
+      // would always fall back to a clip. The transport reconnects by itself if the session drops.
+      sonic?.warm();
       mic = createPushToTalk({ bus: ctx.bus, clock: ctx.clock, status: updateMic });
+      // Load the capture worklet now, so the first tap only has to open the microphone.
+      try {
+        prepareCapture();
+      } catch (e: unknown) {
+        log('voice', 'capture preload failed', String(e));
+      }
       off = [
         ctx.bus.on('speak', (request) => engine?.speak(request)),
         ctx.bus.on('tripReset', () => {
@@ -81,13 +110,24 @@ export function createVoiceModule(): AppModule & {
     },
     async enableAudio() {
       if (!player) throw new Error('Voice is still loading.');
-      await player.enable();
+      // iOS mutes Web Audio while the ring/silent switch is on, unless the page declares a
+      // playback session. Capture switches it temporarily (audioSession.ts).
+      enterPlaybackSession();
+      try {
+        await player.enable();
+      } finally {
+        notifyAudio();
+      }
     },
-    async pressToTalk() {
-      if (mic) await mic.press();
+    audioReady: () => player?.ready() ?? false,
+    onAudioReady(listener) {
+      audioListeners.add(listener);
+      return () => {
+        audioListeners.delete(listener);
+      };
     },
-    releaseToTalk() {
-      mic?.release();
+    toggleTalk() {
+      mic?.toggle();
     },
     cancelTalk() {
       mic?.cancel();

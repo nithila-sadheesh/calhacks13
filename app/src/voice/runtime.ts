@@ -68,30 +68,10 @@ const mic = createPushToTalk({
   },
 });
 const talk = node<HTMLButtonElement>('talk');
-talk.onpointerdown = (event) => {
-  if (event.button !== 0) return;
-  talk.setPointerCapture(event.pointerId);
-  void mic.press();
-};
-talk.onpointerup = () => mic.release();
-talk.onpointercancel = () => mic.release();
-talk.onlostpointercapture = () => mic.release();
-talk.onkeydown = (event) => {
-  if ((event.code === 'Space' || event.code === 'Enter') && !event.repeat) {
-    event.preventDefault();
-    void mic.press();
-  }
-};
-talk.onkeyup = (event) => {
-  if (event.code === 'Space' || event.code === 'Enter') {
-    event.preventDefault();
-    mic.release();
-  }
-};
-talk.onblur = () => mic.release();
-window.addEventListener('blur', () => mic.release());
+talk.onclick = () => mic.toggle();
+window.addEventListener('blur', () => mic.cancel());
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) mic.release();
+  if (document.hidden) mic.cancel();
 });
 bus.on('speechStarted', (event) => {
   node('latency').textContent = `First audible: ${Math.round(event.firstAudibleMs)} ms`;

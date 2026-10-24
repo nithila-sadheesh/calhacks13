@@ -75,6 +75,108 @@ ol {
   margin-bottom: 0;
 }
 
+/* Buttons inside the owners' slot panels (Enable sound, Hold to talk). */
+.panel button {
+  font: inherit;
+  font-weight: 600;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.panel button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.panel button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Tap-to-talk microphone in the Voice panel. */
+.mic {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 0.25rem 0;
+}
+
+.panel .mic-button {
+  width: 5.5rem;
+  height: 5.5rem;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  touch-action: manipulation;
+}
+
+.mic-button svg {
+  width: 2.5rem;
+  height: 2.5rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.panel .mic-button[aria-pressed='true'] {
+  background: var(--urgent);
+  border-color: var(--urgent);
+  color: #fff;
+  animation: mic-pulse 1.4s ease-out infinite;
+}
+
+.panel .mic-button.mic-connecting {
+  background: color-mix(in srgb, var(--warn) 30%, var(--surface-2));
+  border-color: var(--warn);
+  animation: none;
+}
+
+.panel .mic-transcribing {
+  opacity: 0.7;
+}
+
+.exchange {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--urgent) 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 1.25rem transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel .mic-button[aria-pressed='true'] {
+    animation: none;
+  }
+}
+
 /* Setup screen */
 .setup {
   max-width: 34rem;
@@ -126,6 +228,33 @@ button.primary {
   cursor: pointer;
 }
 
+button.secondary {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.secondary:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.actions {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.trip-button {
+  width: 100%;
+  min-height: 3.25rem;
+  font-size: 1.15rem;
+}
+
 button.primary:disabled {
   background: var(--surface-2);
   color: var(--muted);
@@ -133,6 +262,7 @@ button.primary:disabled {
 }
 
 button.primary:focus-visible,
+button.secondary:focus-visible,
 .check input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -159,7 +289,8 @@ button.primary:focus-visible,
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
-  aspect-ratio: 16 / 9;
+  justify-self: center;
+  width: 100%;
 }
 
 .video-wrap video {
@@ -320,7 +451,26 @@ button.primary:focus-visible,
   .drive {
     grid-template-columns: 1fr;
   }
+}
 
+/* Phones: edge-to-edge, with captions still large enough to read at a glance. */
+@media (max-width: 40rem) {
+  .setup {
+    padding: 2rem 1rem;
+  }
+
+  .drive {
+    padding: 0.5rem;
+    gap: 0.75rem;
+  }
+
+  .captions {
+    font-size: 1.35rem;
+    min-height: 3.25rem;
+  }
+}
+
+@media (max-width: 60rem) {
   .timeline-row {
     grid-template-columns: 1fr;
     gap: 0.5rem;

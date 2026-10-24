@@ -15,15 +15,16 @@ function setup() {
   const play = vi.fn(() => ({ stop }));
   mocks.player.mockReset().mockReturnValue({ ready: () => true, play, close, enable });
   const socketClose = vi.fn();
-  mocks.transport
-    .mockReset()
-    .mockReturnValue({
-      send: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn(),
-      close: socketClose,
-    });
+  const warm = vi.fn();
+  mocks.transport.mockReset().mockReturnValue({
+    warm,
+    send: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn(),
+    close: socketClose,
+  });
   const bus = createBus();
   const ctx: ModuleContext = {
+    source: 'replay',
     bus,
     clock: { nowMs: () => 0, onReset: () => () => {} },
     video: {} as HTMLVideoElement,
@@ -38,7 +39,7 @@ function setup() {
       clipKey: 'pedestrianNearby',
       priority: 0,
     });
-  return { module, ctx, alert, bus, stop, close, socketClose, enable, play };
+  return { module, ctx, alert, bus, stop, close, socketClose, enable, play, warm };
 }
 afterEach(() => vi.clearAllMocks());
 it('wires bus playback and stops active sound on reset, pause and module disposal', async () => {
@@ -59,6 +60,12 @@ it('wires bus playback and stops active sound on reset, pause and module disposa
   expect(s.play).toHaveBeenCalledTimes(3);
   expect(s.close).toHaveBeenCalledTimes(1);
   expect(s.socketClose).toHaveBeenCalledTimes(1);
+});
+it('opens the Sonic session at start, before any reminder needs it', async () => {
+  const s = setup();
+  await s.module.start(s.ctx);
+  expect(s.warm).toHaveBeenCalledTimes(1);
+  s.module.stop();
 });
 it('does not resurrect a module stopped while clips are loading', async () => {
   const s = setup();

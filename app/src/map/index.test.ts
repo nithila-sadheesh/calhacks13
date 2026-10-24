@@ -27,6 +27,7 @@ function setup() {
   const resets = new Set<(ms: number) => void>();
   const bus = createBus();
   const ctx = {
+    source: 'replay',
     bus,
     clock: {
       nowMs: () => nowMs,

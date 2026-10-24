@@ -25,7 +25,20 @@ export type MapSnapshot = {
   upcoming: UpcomingFeature[];
 };
 
-export type EngineUpdate = { position?: Position; decisions: CueDecision[]; snapshot: MapSnapshot };
+// A feature that just came within look-ahead range, early enough to word its reminder.
+export type FeatureAheadNotice = { feature: MapFeature; distM: number };
+
+export type EngineUpdate = {
+  position?: Position;
+  decisions: CueDecision[];
+  ahead: FeatureAheadNotice[];
+  snapshot: MapSnapshot;
+};
+
+// Look-ahead for FeatureAheadNotice: about 35 s of travel, never less than 150 m. Cue windows open
+// under 10 s out, which leaves the assistant ~25 s to word the reminder.
+export const AHEAD_S = 35;
+export const AHEAD_MIN_M = 150;
 
 export const EMPTY_SNAPSHOT: MapSnapshot = { status: 'waiting', upcoming: [] };
 
@@ -49,6 +62,7 @@ export function createMapEngine({ track, features, route }: Fixtures) {
   let lastUpdateMs: number | undefined;
   let pass = 0;
   const fired = new Set<string>();
+  const announced = new Set<string>();
 
   const snapshot = (status: EngineStatus, position?: Position): MapSnapshot => {
     const { progressM } = progress;
@@ -71,6 +85,19 @@ export function createMapEngine({ track, features, route }: Fixtures) {
     return snap;
   };
 
+  const lookAhead = (position: Position, progressM: number): FeatureAheadNotice[] => {
+    const rangeM = Math.max(AHEAD_MIN_M, position.speedMps * AHEAD_S);
+    const out: FeatureAheadNotice[] = [];
+    for (const feature of ordered) {
+      const distM = feature.routeDistM - progressM;
+      if (distM > rangeM) break;
+      if (distM <= 0 || announced.has(feature.id) || fired.has(feature.id)) continue;
+      announced.add(feature.id);
+      out.push({ feature, distM });
+    }
+    return out;
+  };
+
   const decide = (position: Position, progressM: number): CueDecision[] => {
     const out: CueDecision[] = [];
     for (const feature of ordered) {
@@ -85,29 +112,41 @@ export function createMapEngine({ track, features, route }: Fixtures) {
     return out;
   };
 
+  // priorM guides the first route match: where we probably are, before any match is accepted.
+  const advance = (position: Position, priorM: number): EngineUpdate => {
+    // The first update after a reset only finds where we are. Cues need the clock to move,
+    // so nothing is said at load or right after a seek while paused.
+    const moving = lastUpdateMs !== undefined && position.tripMs > lastUpdateMs;
+    lastUpdateMs = position.tripMs;
+    if (line.coords.length < 2)
+      return { position, decisions: [], ahead: [], snapshot: snapshot('noRoute', position) };
+
+    const step = advanceProgress(line, progress, position, priorM);
+    progress = step.state;
+    const tracking = step.status === 'ok' && progress.progressM !== undefined;
+    const ahead = tracking ? lookAhead(position, progress.progressM!) : [];
+    const decisions = tracking && moving ? decide(position, progress.progressM!) : [];
+    return { position, decisions, ahead, snapshot: snapshot(step.status, position) };
+  };
+
   return {
     routeLengthM: line.lengthM,
     trackPointCount: points.length,
 
+    // Replay: interpolate the recorded track at this trip time.
     update(tripMs: number): EngineUpdate {
-      // The first update after a reset only finds where we are. Cues need the clock to move,
-      // so nothing is said at load or right after a seek while paused.
-      const moving = lastUpdateMs !== undefined && tripMs > lastUpdateMs;
-      lastUpdateMs = tripMs;
-
       const position = interpolateTrack(points, tripMs);
-      if (!position) return { decisions: [], snapshot: snapshot('noPosition') };
-      if (line.coords.length < 2)
-        return { position, decisions: [], snapshot: snapshot('noRoute', position) };
+      if (!position) {
+        lastUpdateMs = tripMs;
+        return { decisions: [], ahead: [], snapshot: snapshot('noPosition') };
+      }
+      return advance(position, startM + odometerAt(points, travelled, tripMs));
+    },
 
-      const priorM = startM + odometerAt(points, travelled, tripMs);
-      const step = advanceProgress(line, progress, position, priorM);
-      progress = step.state;
-      const decisions =
-        step.status === 'ok' && moving && progress.progressM !== undefined
-          ? decide(position, progress.progressM)
-          : [];
-      return { position, decisions, snapshot: snapshot(step.status, position) };
+    // Live: a position measured just now. With no recording there is no odometer, so the
+    // first match starts from the beginning of the route.
+    updateLive(position: Position): EngineUpdate {
+      return advance(position, 0);
     },
 
     reset() {
@@ -115,6 +154,7 @@ export function createMapEngine({ track, features, route }: Fixtures) {
       lastUpdateMs = undefined;
       pass += 1;
       fired.clear();
+      announced.clear();
     },
   };
 }

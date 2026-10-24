@@ -48,7 +48,7 @@ function setup() {
     transport: (r, d) => {
       receive = r;
       disconnect = d;
-      return { send, cancel, close };
+      return { warm: () => {}, send, cancel, close };
     },
   });
   const speak = (id = 'route', extra: Partial<SpeakRequest> = {}) =>
@@ -242,4 +242,38 @@ it('uses the explicit fallback key only when it matches the approved sentence', 
   expect(s.nodes).toHaveLength(1);
   expect(s.ended).toHaveBeenCalledWith({ id: 'wrong', interrupted: false });
   s.engine.stop();
+});
+describe('generated wording', () => {
+  const claude = 'Stop sign on Oxford Street. Plan a complete stop.';
+  it('streams a safe generated line through Sonic', () => {
+    const s = setup();
+    s.speak('answer', { text: 'The stop sign is about 60 meters ahead.' });
+    expect(s.send).toHaveBeenCalledWith(
+      expect.any(String),
+      'The stop sign is about 60 meters ahead.',
+    );
+  });
+  it('refuses an unsafe line without sending it', () => {
+    const s = setup();
+    s.speak('answer', { text: 'The intersection is clear.' });
+    expect(s.send).not.toHaveBeenCalled();
+    expect(s.ended).toHaveBeenCalledWith({ id: 'answer', interrupted: false });
+  });
+  it('falls back to the route clip the arbiter chose when streaming is slow', () => {
+    const s = setup();
+    s.speak('cue', { text: claude, fallbackClipKey: 'stopSign' });
+    vi.advanceTimersByTime(1500);
+    expect(s.player.play).toHaveBeenCalledWith(
+      s.clips.get('stopSign'),
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+  it('never lets generated text select a warning clip', () => {
+    const s = setup();
+    s.speak('cue', { text: claude, fallbackClipKey: 'pedestrianNearby' });
+    vi.advanceTimersByTime(1500);
+    expect(s.player.play).not.toHaveBeenCalled();
+    expect(s.ended).toHaveBeenCalledWith({ id: 'cue', interrupted: false });
+  });
 });

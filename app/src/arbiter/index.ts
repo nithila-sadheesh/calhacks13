@@ -39,6 +39,8 @@ export function createArbiter(): AppModule {
         bus.on('webcamAlert', (alert) => dispatch({ type: 'alert', alert })),
         bus.on('speechEnded', ({ id }) => dispatch({ type: 'speechEnded', id })),
         bus.on('voiceCommand', ({ kind }) => dispatch({ type: 'voice', kind })),
+        bus.on('assistantReply', (reply) => dispatch({ type: 'answer', reply })),
+        bus.on('cueWording', (wording) => dispatch({ type: 'cueWording', wording })),
         bus.on('cameraHealth', ({ ok }) => dispatch({ type: 'camera', ok })),
         bus.on('tripState', ({ state: s }) => dispatch({ type: 'tripState', state: s })),
         bus.on('tripReset', () => dispatch({ type: 'reset' })),

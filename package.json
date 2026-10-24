@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "phone": "node --experimental-strip-types scripts/dev/phone.ts",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -18,6 +19,7 @@
     "clips": "node --experimental-strip-types scripts/voice/generateClips.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@mediapipe/tasks-vision": "^1.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

@@ -5,6 +5,9 @@
   "functions": {
     "api/cartesia-token.ts": {
       "maxDuration": 15
+    },
+    "api/assistant.ts": {
+      "maxDuration": 30
     }
   }
 }

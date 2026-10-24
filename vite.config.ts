@@ -2,7 +2,9 @@
 // /demo-drive/*.json, /demo-drive/video.mp4 and /audio/* at runtime.
 // In dev, /api/<name> runs the web-standard handler exported from api/<name>.ts, the same
 // handler Vercel serves from api/<name>.ts in production. .env is loaded for those handlers only.
-import { existsSync } from 'node:fs';
+// HTTPS=1 (set by `npm run phone`) serves over HTTPS with the certificate in .certs/.
+import { existsSync, readFileSync } from 'node:fs';
+import type { TLSSocket } from 'node:tls';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { loadEnv, type Plugin } from 'vite';
@@ -32,13 +34,22 @@ function devApi(): Plugin {
             return res.end();
           }
           const headers = new Headers();
+          // Over HTTPS Vite speaks HTTP/2: skip its pseudo-headers (:authority, :path, ...),
+          // which are not valid header names, and take the host from :authority.
           for (const [key, value] of Object.entries(req.headers)) {
-            if (typeof value === 'string') headers.set(key, value);
+            if (typeof value === 'string' && !key.startsWith(':')) headers.set(key, value);
           }
-          // Body-less requests only; the token endpoint is a GET.
-          const request = new Request(`http://${req.headers.host}${req.url}`, {
+          const authority = req.headers[':authority'];
+          const host = req.headers.host ?? (typeof authority === 'string' ? authority : '');
+          // The handlers compare Origin with this URL, so the scheme must be the real one.
+          const scheme = (req.socket as TLSSocket).encrypted ? 'https' : 'http';
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && chunks.length > 0;
+          const request = new Request(`${scheme}://${host}${req.url}`, {
             method: req.method,
             headers,
+            body: hasBody ? Buffer.concat(chunks) : undefined,
           });
           const response = (await handler(request)) as Response;
           res.statusCode = response.status;
@@ -52,8 +63,14 @@ function devApi(): Plugin {
   };
 }
 
+const https =
+  process.env.HTTPS === '1'
+    ? { key: readFileSync('.certs/dev-key.pem'), cert: readFileSync('.certs/dev-cert.pem') }
+    : undefined;
+
 export default defineConfig({
   plugins: [react(), devApi()],
   publicDir: 'fixtures',
+  server: { https },
   test: { include: ['**/*.test.ts'], exclude: ['node_modules/**'] },
 });

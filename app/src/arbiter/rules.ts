@@ -3,6 +3,8 @@
 // in rules.test.ts. The arbiter decides only when something is heard, never what is safe.
 import type {
   ArbiterDecision,
+  AssistantReply,
+  CueWording,
   MapCue,
   MapFeatureKind,
   SpeakRequest,
@@ -13,6 +15,7 @@ export const SPACING_MS = 4000; // gap after any line before a fresh route cue o
 export const REPLAY_GAP_MS = 1000; // shorter gap before an interrupted cue's replay or a repeat
 export const ALERT_COOLDOWN_MS = 8000; // per alert kind
 export const REPEAT_TTL_MS = 10000;
+export const ANSWER_TTL_MS = 15000; // a spoken answer older than this is no longer an answer
 export const SYSTEM_TTL_MS = 10000;
 export const WATCHDOG_SLACK_MS = 4000; // on top of the estimated speech length
 const CHARS_PER_SECOND = 14;
@@ -31,7 +34,7 @@ const FALLBACK_CLIPS: Partial<Record<MapFeatureKind, string>> = {
 };
 
 export type Item = {
-  origin: 'cue' | 'alert' | 'repeat' | 'system';
+  origin: 'cue' | 'alert' | 'repeat' | 'system' | 'answer';
   sourceId: string;
   dedupeKey?: string; // never spoken twice per trip; repeats and replays bypass it
   alertKind?: WebcamAlert['kind'];
@@ -52,6 +55,7 @@ export type ArbiterState = {
   spokenKeys: ReadonlySet<string>;
   lastAlertMs: Readonly<Partial<Record<WebcamAlert['kind'], number>>>;
   lastCue?: Item;
+  cueWording: ReadonlyMap<string, string>; // featureId -> Claude wording, used if it arrived in time
   lastEndMs?: number;
   muted: boolean;
   cameraPausedSaid: boolean;
@@ -64,6 +68,8 @@ export type Input =
   | { type: 'alert'; alert: WebcamAlert }
   | { type: 'speechEnded'; id: string }
   | { type: 'voice'; kind: 'repeat' | 'mute' | 'unmute' }
+  | { type: 'answer'; reply: AssistantReply }
+  | { type: 'cueWording'; wording: CueWording }
   | { type: 'camera'; ok: boolean }
   | { type: 'tripState'; state: 'idle' | 'playing' | 'paused' | 'ended' }
   | { type: 'tick' }
@@ -79,6 +85,7 @@ export function initialState(playing = false, seq = 0): ArbiterState {
     queue: [],
     spokenKeys: new Set(),
     lastAlertMs: {},
+    cueWording: new Map(),
     muted: false,
     cameraPausedSaid: false,
     playing,
@@ -86,18 +93,20 @@ export function initialState(playing = false, seq = 0): ArbiterState {
   };
 }
 
-export function cueItem(cue: MapCue): Item {
+// `wording` is Claude's text for this feature, if it arrived before the cue; otherwise the
+// map's approved template is spoken. The fallback clip is the same either way.
+export function cueItem(cue: MapCue, wording?: string): Item {
   return {
     origin: 'cue',
     sourceId: cue.id,
     dedupeKey: `feature:${cue.featureId}`,
-    text: cue.text,
+    text: wording ?? cue.text,
     fallbackClipKey: FALLBACK_CLIPS[cue.featureKind],
     priority: cue.priority,
     earliestMs: cue.earliestMs,
     expiresMs: cue.expiresMs,
     gapMs: SPACING_MS,
-    why: 'cue window open',
+    why: wording ? 'cue window open (Claude wording)' : 'cue window open',
     replayed: false,
   };
 }
@@ -142,7 +151,16 @@ export function step(
 
   switch (input.type) {
     case 'cue':
-      offer(run, cueItem(input.cue));
+      offer(run, cueItem(input.cue, s.cueWording.get(input.cue.featureId)));
+      break;
+    case 'cueWording': {
+      const wording = new Map(s.cueWording);
+      wording.set(input.wording.featureId, input.wording.text);
+      s.cueWording = wording;
+      break;
+    }
+    case 'answer':
+      onAnswer(run, input.reply);
       break;
     case 'alert':
       offer(run, alertItem(input.alert));
@@ -210,7 +228,9 @@ function offer(run: Run, item: Item) {
 
   if (item.dedupeKey && isDuplicate(s, item.dedupeKey)) return reject('dropped', 'duplicate');
   if (nowMs > item.expiresMs) return reject('dropped', 'expired');
-  if (item.priority > 0 && s.muted && item.origin !== 'repeat') return reject('dropped', 'muted');
+  // Repeats and answers were asked for out loud, so mute (which silences reminders) lets them through.
+  if (item.priority > 0 && s.muted && item.origin !== 'repeat' && item.origin !== 'answer')
+    return reject('dropped', 'muted');
   if (item.alertKind) {
     const last = s.lastAlertMs[item.alertKind];
     if (last !== undefined && nowMs - last < ALERT_COOLDOWN_MS) {
@@ -287,6 +307,24 @@ function onVoice(run: Run, kind: 'repeat' | 'mute' | 'unmute') {
     expiresMs: nowMs + REPEAT_TTL_MS,
     gapMs: REPLAY_GAP_MS,
     why: 'repeat requested',
+    replayed: false,
+  });
+}
+
+// Claude's reply to a spoken request: its action runs like the fixed voice command, and its text
+// is queued like any other line, so a vision warning still interrupts it.
+function onAnswer(run: Run, reply: AssistantReply) {
+  if (reply.action) onVoice(run, reply.action);
+  if (!reply.text || reply.action === 'repeat') return;
+  offer(run, {
+    origin: 'answer',
+    sourceId: reply.id,
+    text: reply.text,
+    priority: 1,
+    earliestMs: run.nowMs,
+    expiresMs: run.nowMs + ANSWER_TTL_MS,
+    gapMs: REPLAY_GAP_MS,
+    why: 'answer to spoken request',
     replayed: false,
   });
 }

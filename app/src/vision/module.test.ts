@@ -21,6 +21,7 @@ function setup() {
   const health: Events['cameraHealth'][] = [];
   bus.on('cameraHealth', (event) => health.push(event));
   const ctx: ModuleContext = {
+    source: 'replay',
     bus,
     video: video as HTMLVideoElement,
     clock: {
