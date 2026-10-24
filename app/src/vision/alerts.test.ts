@@ -46,7 +46,7 @@ describe('pedestrianNearby', () => {
     expect(result).not.toBeNull();
     expect(result?.alert.kind).toBe('pedestrianNearby');
     expect(result?.alert.text).toBe('Pedestrian ahead. Stay alert.');
-    expect(result?.alert.clipKey).toBe('pedestrian');
+    expect(result?.alert.clipKey).toBe('pedestrianNearby');
     expect(result?.trackId).toBe(1);
   });
 

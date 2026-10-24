@@ -6,7 +6,13 @@ import { ObjectDetector, type ObjectDetectorResult } from '@mediapipe/tasks-visi
 import wasmLoaderUrl from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import wasmBinaryUrl from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
 import modelUrl from './assets/efficientdet_lite0.tflite?url';
-import { DETECTOR_CLASSES, MAX_RESULTS, SCORE_THRESHOLD, type DetectorClass } from './config.ts';
+import {
+  DETECTOR_CLASSES,
+  INFERENCE_WIDTH,
+  MAX_RESULTS,
+  SCORE_THRESHOLD,
+  type DetectorClass,
+} from './config.ts';
 import type { Detection } from './tracker.ts';
 
 const CLASS_SET: ReadonlySet<string> = new Set(DETECTOR_CLASSES);
@@ -25,12 +31,23 @@ export async function loadDetector(): Promise<VisionDetector> {
 
   const detector = await createWithFallback(fileset);
 
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    detector.close();
+    throw new Error('Frame downscaling unavailable');
+  }
   return {
     detect(video, timestampMs) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
       if (!vw || !vh) return [];
-      return toDetections(detector.detectForVideo(video, timestampMs), vw, vh);
+      const width = Math.min(vw, INFERENCE_WIDTH);
+      const height = Math.max(1, Math.round((vh * width) / vw));
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+      context.drawImage(video, 0, 0, width, height);
+      return toDetections(detector.detectForVideo(canvas, timestampMs), width, height);
     },
     close() {
       detector.close();

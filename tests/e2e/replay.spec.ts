@@ -126,3 +126,25 @@ test('real voice loads clips and unlocks sound before replay controls are offere
   await page.getByRole('button', { name: 'Enable replay sound' }).click();
   await expect(video(page)).toHaveJSProperty('controls', true);
 });
+
+test('real vision loads its model and WASM from local assets', async ({ page }) => {
+  const logs: string[] = [];
+  const external: string[] = [];
+  page.on('console', (message) => logs.push(message.text()));
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.protocol.startsWith('http') && !['localhost', '127.0.0.1'].includes(url.hostname))
+      external.push(url.origin);
+  });
+  await page.goto('/?mock=map,voice');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Load demo drive' }).click();
+  await expect
+    .poll(
+      () => logs.some((line) => line.includes('[vision]') && line.includes('detector loaded')),
+      { timeout: 30000 },
+    )
+    .toBe(true);
+  await expect(video(page)).toHaveJSProperty('controls', true);
+  expect(external).toEqual([]);
+});

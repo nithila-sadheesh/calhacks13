@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createBus } from '../../shared/bus.ts';
+import { createVisionModule } from '../../app/src/vision/index.ts';
 import { createMapModule } from '../../app/src/map/index.ts';
 import { feature, lDrive } from '../../app/src/map/testing.ts';
 import { createMockMap } from '../../shared/mocks/map.ts';
@@ -8,19 +9,30 @@ import type { Events, ModuleContext } from '../../shared/types.ts';
 import { createArbiter } from '../../app/src/arbiter/index.ts';
 import { createVoiceModule } from '../../app/src/voice/index.ts';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), player: vi.fn(), transport: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  load: vi.fn(),
+  player: vi.fn(),
+  transport: vi.fn(),
+  detector: vi.fn(),
+}));
+vi.mock('../../app/src/vision/detector.ts', () => ({ loadDetector: mocks.detector }));
 vi.mock('../../app/src/voice/clips.ts', () => ({ loadClips: mocks.load }));
 vi.mock('../../app/src/voice/player.ts', () => ({ createAudioPlayer: mocks.player }));
 vi.mock('../../app/src/voice/sonic.ts', () => ({ createSonicTransport: mocks.transport }));
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
-it.each(['mock', 'real'] as const)(
+it.each(['mock', 'real', 'all-real'] as const)(
   'connects %s map to real arbiter and voice through interruption, repeat, pause and seek reset',
   async (mapMode) => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'],
+    });
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 125));
+    vi.stubGlobal('cancelAnimationFrame', (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
     let ms = 0;
     const bus = createBus();
     const resets = new Set<(ms: number) => void>();
@@ -35,7 +47,15 @@ it.each(['mock', 'real'] as const)(
           };
         },
       },
-      video: { paused: true, ended: false } as HTMLVideoElement,
+      video: {
+        paused: false,
+        ended: false,
+        readyState: 4,
+        videoWidth: 1280,
+        get currentTime() {
+          return ms / 1000;
+        },
+      } as HTMLVideoElement,
       fixtures: { ...lDrive(), features: [feature('stop-integration', 'stopSign', 120)] },
     };
     const samples = new Float32Array([0.2]);
@@ -66,6 +86,11 @@ it.each(['mock', 'real'] as const)(
     const ended: Events['speechEnded'][] = [];
     bus.on('speak', (request) => speaks.push(request));
     bus.on('speechEnded', (event) => ended.push(event));
+    mocks.detector.mockResolvedValue({
+      detect: () =>
+        ms >= 4500 ? [{ cls: 'person', score: 0.9, box: { x: 0.4, y: 0.5, w: 0.2, h: 0.4 } }] : [],
+      close: vi.fn(),
+    });
     const voice = createVoiceModule();
     const frames = new Map<number, () => void>();
     let nextFrame = 0;
@@ -86,7 +111,12 @@ it.each(['mock', 'real'] as const)(
       frames.clear();
       callbacks.forEach((cb) => cb());
     };
-    const modules = [map, createMockVision(), voice, createArbiter()];
+    const modules = [
+      map,
+      mapMode === 'all-real' ? createVisionModule() : createMockVision(),
+      voice,
+      createArbiter(),
+    ];
     const advance = async (to: number) => {
       while (ms < to) {
         ms += 100;

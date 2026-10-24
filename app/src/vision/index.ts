@@ -16,19 +16,24 @@ import { bottomCenter, pointInForwardRegion } from './geometry.ts';
 import { visionStore, type OverlayDetection } from './store.ts';
 import { createTracker } from './tracker.ts';
 
-export const visionModule: AppModule = {
-  name: 'vision',
-  async start(ctx: ModuleContext) {
-    runtime = createRuntime(ctx);
-    await runtime.start();
-  },
-  stop() {
-    runtime?.stop();
-    runtime = undefined;
-  },
-};
+export function createVisionModule(): AppModule {
+  let runtime: ReturnType<typeof createRuntime> | undefined;
+  return {
+    name: 'vision',
+    async start(ctx: ModuleContext) {
+      runtime?.stop();
+      const next = createRuntime(ctx);
+      runtime = next;
+      await next.start();
+    },
+    stop() {
+      runtime?.stop();
+      runtime = undefined;
+    },
+  };
+}
 
-let runtime: ReturnType<typeof createRuntime> | undefined;
+export const visionModule = createVisionModule();
 
 function createRuntime(ctx: ModuleContext) {
   const { bus, clock, video } = ctx;
@@ -43,6 +48,7 @@ function createRuntime(ctx: ModuleContext) {
   let stopped = false;
 
   let speedMps = 0;
+  let lastVideoTime: number | undefined;
   // Monotonic timestamp for the detector only. Never reset (MediaPipe requires it to keep
   // increasing for the detector's whole life) and never used for trip or alert timing.
   let detectorTs = 0;
@@ -61,12 +67,20 @@ function createRuntime(ctx: ModuleContext) {
   }
 
   function clearState(): void {
+    speedMps = 0;
+    lastVideoTime = undefined;
     tracker.reset();
     alerts.reset();
     currentAlert = undefined;
     visionStore.reset();
     // A reset means we are alive again; re-arm health without emitting a spurious transition.
-    healthOk = true;
+    healthOk = detector !== undefined;
+    if (!healthOk) {
+      visionStore.set({
+        ...visionStore.get(),
+        health: { ok: false, reason: 'detector unavailable' },
+      });
+    }
     lastInferWall = performance.now();
   }
 
@@ -79,6 +93,9 @@ function createRuntime(ctx: ModuleContext) {
       return;
     }
 
+    // A stalled video must not count the same pedestrian frame four times.
+    if (lastVideoTime === video.currentTime) return;
+    lastVideoTime = video.currentTime;
     detectorTs += FRAME_INTERVAL_MS;
     let detections;
     try {
@@ -163,12 +180,14 @@ function createRuntime(ctx: ModuleContext) {
     try {
       detector = await loadDetector();
     } catch (e: unknown) {
+      if (stopped) return;
       log('vision', 'detector failed to load', e);
       publishHealth(false, 'detector unavailable');
       return;
     }
     if (stopped) {
       detector.close();
+      detector = undefined;
       return;
     }
 

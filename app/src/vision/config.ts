@@ -58,6 +58,6 @@ export type ForwardRegion = typeof FORWARD_REGION;
 // Bundled-clip keys for each alert kind. Must match fixtures/audio/manifest.json (Nithila's
 // manifest keys). If those keys differ, this is the one place to change.
 export const CLIP_KEYS: Record<'pedestrianNearby' | 'followingDistance', string> = {
-  pedestrianNearby: 'pedestrian',
+  pedestrianNearby: 'pedestrianNearby',
   followingDistance: 'followingDistance',
 };

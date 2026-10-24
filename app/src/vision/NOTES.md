@@ -50,7 +50,7 @@ now; the local-asset path works and keeps everything in Tejas's folder.
 
 - **pedestrianNearby (primary):** a `person` at confidence ≥ 0.6 whose box bottom-center is inside
   the forward region, present in ≥ 4 of the last 5 processed frames. Text: "Pedestrian ahead.
-  Stay alert." Never "crossing". `clipKey: 'pedestrian'`.
+  Stay alert." Never "crossing". `clipKey: 'pedestrianNearby'`.
 - **followingDistance (fallback, off by default):** a vehicle filling ≥ 35 % of the frame width
   inside the forward region for 2 s while speed > 5 m/s. Text: "Leave more space ahead."
   `clipKey: 'followingDistance'`. Turn on only if the pedestrian alert proves unreliable on our
@@ -75,8 +75,8 @@ change. Pausing the video is not a stall (the watchdog only counts time while pl
 
 ## Clip keys — message for Nithila
 
-`webcamAlert.clipKey` is `'pedestrian'` for the pedestrian alert and `'followingDistance'` for the
-fallback. These must exist in `fixtures/audio/manifest.json`. `'pedestrian'` already matches the
+`webcamAlert.clipKey` is `'pedestrianNearby'` for the pedestrian alert and `'followingDistance'` for the
+fallback. These must exist in `fixtures/audio/manifest.json`. `'pedestrianNearby'` already matches the
 vision mock. If Nithila's keys differ, change `CLIP_KEYS` in `config.ts` (one place) — do not
 change the contract.
 
@@ -106,3 +106,5 @@ and not HDR, landscape. Once it lands, run in Chrome on the demo laptop and conf
 4. Forcing inference to stall for 2 s shows "Camera paused" and emits `cameraHealth { ok: false }`.
 
 Then fill in `HOLDOUT.md` from a second clip with no retuning.
+
+Integration updates: frames are downscaled to at most 640 pixels wide before inference; repeated video timestamps are skipped. Restart/stop disposes the previous runtime; reset clears cached speed and frame identity. Real-footage and holdout acceptance remain pending.
