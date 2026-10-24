@@ -1,5 +1,19 @@
 # Learner Co-Pilot: Build Design Doc
 
+## Current approved revision: local CV with language coaching
+
+**Production flow:** recorded video → local EfficientDet-Lite0 and IoU tracker → compact scene JSON → Claude chooses coaching → arbiter → Sonic. It reuses existing components rather than adding OCR, depth models, lane networks or an agent framework.
+
+- The detector is warmed on a blank canvas before playback; its output is discarded. During replay it samples distinct trip times at a target interval of 125 ms and downsizes video locally. CPU load and decoding can reduce actual throughput. No frame pixels are submitted by the default module.
+- Objects must be observed repeatedly and exceed a starting score floor of 0.45. Output contains tentative IDs, classes, detector confidence, coarse image-side/zone, lateral IMAGE displacement, apparent-size trend and observed duration. These are not physical distances, speeds, stopped states or arrival order. IDs are not verified identities across cuts.
+- Supported classes: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Detecting one sign does not establish an all-way stop or the approach it controls; a light detection never supplies a color. Speed-sign OCR, lanes, intended maneuver and metric proximity are not implemented.
+- Changed coarse scenes trigger Claude at most once per three seconds with one request in flight; unchanged nonempty scenes refresh after five seconds. Empty scenes do not force model calls. Up to three prior detector snapshots and four bounded model observation entries provide context. Mute/repeat, freshness, duplicate handling and replay resets remain unchanged.
+- `/api/vision-advice` accepts bounded `scene`/`previousScenes` JSON as the active input. It explicitly tells Claude no image is present and forbids inventing missing road context from the teaching examples. Image input is retained only for explicit legacy diagnostics; frame and CV payloads cannot be mixed.
+- UI shows CV boxes/counts/frame latency immediately while Claude selects a message or silence. Privacy: frames stay on device; object descriptions and prior textual observations go to Anthropic; reminder text/held mic audio go to Cartesia; GPS coordinates are not sent.
+- Validation includes local observations → real arbiter/voice transport, CV lifecycle/reset, JSON-only server requests, browser video/model execution and optional live provider checks. Actual latency/quality must be measured; text-only input loses visual context that Claude previously supplied.
+
+The VLM revision below is historical wherever it conflicts with this active hybrid revision.
+
 ## Approved revision: video-language coaching
 
 This section is the current architecture, approved by the user during integration. It supersedes conflicting local-only detection, fixed-phrase-only and no-LLM requirements in the original v2 blueprint retained below for history.

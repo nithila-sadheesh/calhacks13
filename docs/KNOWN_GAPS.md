@@ -1,67 +1,48 @@
-# VLM integration status
+# Current integration: local CV → Claude → Cartesia
 
-Current branch: `integration`. All four contributors’ code is merged. The user approved a new architecture: Claude interprets sampled video frames and generates coaching; Cartesia speaks the validated text. The old object detector is retained for legacy diagnostics, not the default app.
+All contributor branches remain merged on `integration`. Production now uses one local object-detection/tracking path and sends compact scene JSON to Claude for coaching. No new dependency, cloud CV service, OCR pipeline or agent framework was added.
 
-## Working implementation
+## What runs
 
-- Video frames → `/api/vision-advice` → Claude → validated `visionAdvice` → arbiter → Sonic. Default model: `claude-sonnet-5-5`; optional server override `ANTHROPIC_MODEL`.
-- Map still publishes positions/cues and fills Upcoming. Map speech is off by default; append `?mapSpeech=1` to enable supplementary advisory reminders. No GPS is sent to Claude.
-- Vision samples once per second, keeps at most three resized JPEGs, starts after two, and starts at most one request every three seconds. Only one request is in flight. Pause/seek/reset/end/disposal abort analysis and discard obsolete results.
-- Results older than eight seconds are ignored; advice expires ten seconds after the newest analyzed frame. Exact repeated messages are suppressed for 20 seconds; recent suggestions also go into the prompt. New video advice replaces queued older video/map reminders. Ordinary model coaching waits for current speech to finish and respects mute; it never assigns emergency priority.
-- Server holds the prompt, key, model, schema and timeouts. POST bodies are bounded to 800 KB; each of 2–3 JPEGs is at most 240 KB base64. Explicit cross-origin requests are rejected. Warm-instance rate limit is 30/minute, not distributed access control.
-- Voice accepts generated text only with the vision origin marker and shared validation. Map wording and bundled clips retain their existing validation. No invented offline fallback for arbitrary coaching: failed streaming ends the line.
-- Replay waits for module startup and explicit **Enable replay sound**. Captions/timeline follow spoken coaching; overlay shows analysis state, observation, suggestion and response time. Setup/data-use UI discloses Anthropic frame uploads and Cartesia use.
-- Keys remain server-only. Image payloads are never logged or committed. Recorded video stays local except for sampled frames submitted to Anthropic. GPS is not sent; visual locations may be recognizable.
+1. Video replay supplies the clock and frames. The existing local EfficientDet-Lite0 model is loaded/warmed before playback; it then processes video at a target 8 fps, with actual throughput depending on the laptop.
+2. The IoU tracker and small scene builder describe repeatedly observed objects: class, tentative ID, detector score, image-side/zone, image motion, apparent-size trend, observed duration. Start threshold is 0.45, with at least two observations; these are initial settings, not evaluated accuracy guarantees.
+3. Scene changes trigger image-free requests to Claude. Minimum three seconds between request starts, one request in flight, five-second refresh for unchanged nonempty scenes. Empty scenes do not force a call. A coarse signature ignores ID/confidence jitter and unknown-to-stable transitions.
+4. Claude uses the existing instructor prompt and written examples but is explicitly restricted to supplied CV facts. It returns observations/uncertainties/teaching point plus speech or silence. The server strips unsupported input fields and forwards no GPS/image/audio fields in CV mode.
+5. Existing arbiter/voice/captions/timeline handle validated coaching, repeat/mute, expiry and audio cancellation. Map is context-only by default (`?mapSpeech=1` enables supplementary speech).
 
-## Run it
+The overlay shows local boxes and ongoing CV frame/count/latency updates while Claude is pending. Startup waits for the local model; **Enable replay sound** also warms Cartesia before replay. Setup and Data use now distinguish local video from the scene descriptions sent to Anthropic.
 
-1. Set `ANTHROPIC_API_KEY` and `CARTESIA_API_KEY` in git-ignored `.env`. Optional `ANTHROPIC_MODEL` defaults to Sonnet 5.5. Restart `npm run dev` after changing server environment variables.
-2. Open the root URL without mocks, check the supervisor box, load the drive, click **Enable replay sound**, then play. Expect analysis to take several seconds; silence is permitted when there is nothing useful to add.
-3. Watch the video-coach status and timeline. Upload metadata appears under Data use; no raw frames are listed. Repeat/mute/unmute use the existing push-to-talk controls.
-4. `?mock=vision` supplies scripted VLM-style advice without Anthropic requests. `?mock=voice` tests video/arbiter/UI without Cartesia audio. Mocks are always test inputs, never evidence of real analysis.
-5. The standalone `/app/src/voice/runtime.html` remains an audio-only diagnostic, not proof of the video-to-coaching flow.
+## Try it
 
-## Verification and current limits
+- Set both provider keys server-side in git-ignored `.env`, then restart `npm run dev`.
+- Open `/` without mocks, load drive, enable replay sound, and play. Look for local boxes/CV counts first; Claude may then speak or choose silence.
+- Expand **What the coach observed** to inspect the model's interpretation and uncertainties.
+- `?mock=voice` runs real CV and Claude without Cartesia speech. `?mock=vision` supplies scripted coaching for UI/audio testing. Mocks are not detection evidence.
+- `frameRuntime.ts` preserves the previous frame-upload module for comparison tests only. The explicit opt-in image API diagnostic still sends images; it is not called by the default app.
 
-- Typecheck, lint and build pass; **263 unit/integration tests pass, 2 annotation checks skip**. The full Chrome suite passes **10 tests**, with the live API test skipped by default; that live check was also run separately and passed. Both configured keys were verified absent from the client build. Tests cover bounded/invalid requests, structured response validation, model errors/refusals, cancellation, duplicate/stale advice, queue/voice origin handling, repeat, real arbiter/voice transport wiring and replay controls.
-- A live opt-in check sent three real recorded frames to Anthropic. HTTP 200, valid coaching JSON, approximately **4.4 seconds** end-to-end API latency on that one request. It suggested scanning crosswalks and curb edges. The prompt was subsequently tightened to request shorter messages. This result does not establish robust latency or accurate scene understanding.
-- `npm run e2e` normally uses a mocked model endpoint for deterministic coaching coverage. `LIVE_VLM_CHECK=1 npm run e2e -- tests/e2e/coaching.spec.ts --grep 'live Claude'` performs one explicit real-model check; it sends frames and consumes credits. Legacy detector diagnostics are separate and do not describe production behavior.
-- The downloaded video is H.264, 3840×2160, yuv420p/BT.709, **11.28 seconds**. It is too short for the planned two-minute demo. Analysis plus speech can run beyond the remaining footage; trip end intentionally cancels old output. Obtain a longer suitable recording rather than stretching/replaying timestamps to simulate analysis.
-- Track/features remain placeholders (two GPS points, one labelled curated stop). Two annotation acceptance tests remain skipped. Matching GPX and real annotated landmarks are needed before claiming map/video sync; map speech is therefore optional by default.
-- Live Sonic audio, audible overlap/latency, Ink recognition and full rehearsal still need demo-laptop verification. Simulated transport tests do not prove speaker output.
-- Prompt/text filters are conservative guardrails, not a guarantee of correct or timely driving advice. No lane-clearance/right-of-way/light-color/speed-limit or emergency-action claims are allowed. A recording/holdout review with model errors and omissions remains required.
-- Exact duplicate detection does not catch every paraphrase. Tune cadence, message length, freshness windows and prompt from measured replay behavior; do not force a message for every request.
-- Vercel deployment remains unverified. Configure both server keys, deploy API functions with the app, and check real HTTPS requests. Function timeout for analysis is 20 seconds; upstream timeout 12 seconds. Do not expose keys with `VITE_` prefixes.
-- Optional map fallback captions still retain the full request when a shorter bundled route clip plays. Exact fallback-caption reporting needs a separate contract decision; this does not affect generated video text.
+## Supported observations and remaining limits
 
-## Files to change next
+- Detectable classes: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Classification can be wrong, especially small distant road users. A person box does not distinguish an occupant from a pedestrian.
+- Image displacement includes camera motion. A growing box is not a calibrated distance, approach speed, collision estimate or proof of danger. Track IDs can change or accidentally match across cuts. Do not call them verified vehicle identities.
+- Stop/light detections do not establish all-way controls, who arrived/stopped first, signal colors, sign applicability or a safe maneuver. Four-way-stop reasoning, speed-limit recognition, lane/merge topology, indicator timing and metric proximity remain unsupported. They need additional measured perception/context; Claude must not invent them.
+- The teaching library remains available, but much of its junction/visibility guidance needs facts a basic detector does not supply. Text-only mode is a latency/context tradeoff, not a guarantee of better instruction.
+- Live text-only checks returned valid JSON in about 2.0–6.3 seconds. Claude selected silence when CV supplied only weak car/person tracks without supported road context. Those runs validate connectivity and uncertainty handling, not driving-instructor quality or consistently fast speech. Do not force a warning quota.
+- The video is only 11.28 seconds; a later request or sentence can be canceled by trip end. Get a longer suitable recording and a separate holdout before evaluating continuous coaching.
+- GPS/features remain placeholders; two annotation acceptance tests skip. No map/video sync or real 2–3 route-cue acceptance is claimed.
+- Live physical speaker/mic behavior, no-overlap perception, deployment/HTTPS and instructor review still need human acceptance. Server rate limiting is warm-instance-only, not distributed authentication/quota protection.
+- Prompt, low-effort Sonnet settings and static-guide caching are retained. They do not remove network/generation latency. Cached images are not used in default CV mode.
+- Optional map fallback captions still retain full reminder text when shorter bundled clips play; unchanged from the earlier integration.
 
-- Prompt/model request: `server/visionAdvice.ts`; endpoint: `api/vision-advice.ts`.
-- Cadence, freshness, cancellation: `app/src/vision/index.ts`; frame size/quality: `capture.ts`.
-- Wire validation/text constraints: `shared/coaching.ts`; event contracts: `shared/types.ts`.
-- Priority and queue policy: `app/src/arbiter/`; audio: `app/src/voice/`.
-- Legacy detector: `app/src/vision/localRuntime.ts`, `detector.ts`, tracker/alerts/config and associated tests. Production does not load the local model/WASM assets.
+## Verification
 
-## Full live replay measurement
+Typecheck, lint, build and **272 unit/integration tests pass; 2 annotation checks skip**. Coverage includes scene-field validation, camera-relative motion, threshold/history handling, ID/confidence-insensitive scene signatures, one in-flight request, ongoing CV during network waits, silence, duplicate suppression, late startup disposal, seek reset, and both old image-mode and new CV-mode real arbiter/voice wiring with simulated audio/network.
 
-An opt-in no-mock Chrome run (`LIVE_RUNTIME_CHECK=1 npm run e2e -- tests/e2e/liveRuntime.spec.ts`) verified actual frame sampling → Claude → arbiter → Cartesia WebSocket → Web Audio start. One successful full run returned advice in 6.6 seconds; the browser reported first audio 318 ms after the speech request. It said “Keep scanning for cyclists and pedestrians around the crossing and sidewalk edge.” The 11.28-second clip ended during the sentence and correctly interrupted audio.
+The full browser regression suite passes **11 checks**, with **3 opt-in live checks skipped by default**. Chrome checks exercise real local model/video processing, image-free request bodies, coaching/evidence UI, replay controls, sound readiness and token retry. Opt-in live tests send scene JSON to Claude and can stream resulting text to Cartesia. A separate legacy detector diagnostic and legacy image-input API test remain explicitly named/opt-in; their results are not the active hybrid path.
 
-Earlier attempts exposed variable model latency (one request did not complete before trip end) and a cold Cartesia connection consuming the 1.5-second first-audio deadline. Enable replay sound now warms the token/WebSocket session before video controls become available; no text is sent during warmup. A separate model-only request completed in 2.9 seconds, and another full-replay analysis completed in 4.8 seconds. These few runs are diagnostics, not a stable latency benchmark. The browser output-clock event is not a physical speaker measurement. A longer recording and further live mic/speaker testing remain necessary.
+## Main files
 
-## Instructor guidance and memory revision
-
-`server/coachingPrompt.ts` now contains a broader teaching library and ten authored text scenarios. Outputs include observations, uncertainties, a teaching point and scene-change indication. See `docs/COACHING_GUIDE.md` for the source references, evidence boundaries and manual review steps. The overlay has an expandable **What the coach observed** view.
-
-The runtime retains up to 20 seconds of local frame/observation context while submitting at most three frames per request. It sends bounded timestamped prior model observations with uncertainty, never treating them as independently verified evidence. An older frame anchors the two recent frames; model-reported scene changes invalidate earlier associations. These are not verified vehicle tracks or proof of arrival order.
-
-The optional server setting `COACHING_JURISDICTION` defaults to unknown. California yielding examples apply only when that jurisdiction is explicitly configured and supported controls/history are present. Written examples are not instructor-reviewed training data. No further live calls were made for this revision; model specificity and latency on the existing clip are awaiting the user's test.
-
-## Sound setup troubleshooting
-
-Replay uses one **Enable replay sound** control; the voice panel shows the same resulting enabled state and no duplicate enable button. The control displays connection progress, clears errors on retry and only enables video controls after audio unlock plus Cartesia warmup. Setup errors distinguish browser audio, unavailable/missing/rejected/rate-limited token responses and WebSocket failure/timeout using controlled messages, never raw token-bearing network errors. Token and WebSocket connectivity succeeded during diagnosis; a separate no-video/no-speech live Chrome sound setup check passed. The user's earlier generic failure could not be attributed to a persistent credential problem. Test it again and report any new specific error. `LIVE_SOUND_CHECK=1 npm run e2e -- tests/e2e/liveRuntime.spec.ts --grep 'live sound setup'` repeats only the connection check.
-
-## Latency settings
-
-Opening frame collection now uses a 250 ms spacing before returning to one-second sampling. Actual timer/video scheduling can make that interval longer. Sonnet 5.5 requests use `thinking: { type: "between_tools" }` and low effort; overrides do not receive Sonnet-specific options. The static teaching guide has an explicit prompt-cache breakpoint, while images and scene memory remain uncached request content. The guide remains extensive; only requested evidence-field verbosity was reduced.
-
-In one full Sonnet replay after this change, analysis took 4.6 seconds and audio started 321 ms after the speech request. The next analysis took 4.0 seconds and correctly chose silence after a scene cut. This is still several seconds of real inference delay, not instant feedback. A comparison Haiku run was inconclusive: one request timed out/canceled and another took 4.7 seconds with deliberate silence; model/default settings were not changed. No cache-hit rate or repeatable speedup is claimed. For prerecorded playback, analyzing an opening frame during setup could shift waiting before playback, but that feature is not implemented.
+- CV runtime: `app/src/vision/index.ts`; detector: `detector.ts`; tracker: `tracker.ts`.
+- Scene summary/signature: `app/src/vision/cvScene.ts`; wire validation: `shared/cvScene.ts` and `shared/coaching.ts`.
+- Server request/prompt: `server/visionAdvice.ts`, `server/coachingPrompt.ts`.
+- UI: `coachingStore.ts`, `VisionOverlay.tsx`; downstream: `app/src/arbiter/`, `app/src/voice/`.
+- Guidance sources/evidence limits: `docs/COACHING_GUIDE.md`. Current architecture supersedes the older VLM-only/default-frame-upload descriptions in historical notes.

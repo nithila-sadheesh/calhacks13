@@ -1,5 +1,12 @@
 # Instructor-style coaching guide
 
+## Current hybrid input
+
+Production now supplies local detector/tracker JSON, not images. Claude sees object classes, tentative IDs, confidence, image-side/zone, camera-relative displacement, apparent-size trend and observed duration. It receives up to three prior detector snapshots and four recent textual observation entries. Unknown controls, lane topology, physical distance, speed, parking state, sign applicability and arrival order cannot be recovered by prompting alone. Written examples with those facts are conditional teaching references, never permission to invent them. A basic person detector also cannot distinguish a pedestrian from a vehicle occupant.
+
+The runtime performs local inference while Claude works; one request at a time and a three-second minimum avoid sending every frame. Nonempty unchanged scenes can refresh after five seconds. No road images are sent by the default module. The previous frame-history and initial-pair descriptions below apply only to the retained `frameRuntime.ts` comparison path. The instructor knowledge and evidence/uncertainty standards still apply.
+
+
 The active prompt is `server/coachingPrompt.ts`; the server adds its configured jurisdiction. This is prompt-based knowledge and authored few-shot scenarios. No model weights were trained, and the scenarios have not yet been reviewed by a qualified instructor.
 
 ## Teaching framework

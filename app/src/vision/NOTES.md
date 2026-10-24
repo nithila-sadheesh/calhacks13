@@ -1,17 +1,16 @@
-# Vision: Claude coaching runtime
+# Vision: local CV and Claude coaching
 
-The default module is now a VLM frame sampler, replacing the earlier MediaPipe decision path by explicit user approval. Current plan: `docs/DESIGN.md`, approved VLM revision.
+Default production flow: local EfficientDet-Lite0 → IoU tracking → compact scene JSON → Claude teaching prompt → `visionAdvice` → arbiter → Sonic. Frames stay local; object descriptions and textual context go to Anthropic.
 
-- `index.ts`: samples recent frames, one request in flight, deduplication, stale response rejection and bus wiring.
-- `capture.ts`: JPEG capture at up to 960 px wide, quality 0.65.
-- `coachingStore.ts` / `VisionOverlay.tsx`: status, observation, latest suggestion and analysis latency.
-- `shared/coaching.ts`: frame/response validation and normalized duplicate keys.
-- `server/visionAdvice.ts`: prompt, model choice, JSON schema and Anthropic request; `api/vision-advice.ts` is the public server entry point.
+- `index.ts`: target 8 fps, one detector runtime, lifecycle cleanup; event-driven model requests with a three-second minimum and five-second unchanged-scene refresh, one request in flight.
+- `detector.ts`: existing local model/WASM, GPU with creation-time CPU fallback, local downscaling and blank-canvas warmup before playback. Warmup creates no road observation.
+- `tracker.ts`: tentative IoU IDs. `cvScene.ts`: repeated observations at score >=0.45, coarse image geometry/motion; no calibrated distance, speed, parking state, lanes or arrival order.
+- `shared/cvScene.ts` / `shared/coaching.ts`: bounded, validated CV JSON and model results; scene and image payloads cannot be mixed.
+- `coachingStore.ts` / `VisionOverlay.tsx`: live local boxes/counts/latency plus coaching/evidence. CV keeps updating while Claude waits.
+- `server/visionAdvice.ts` / `coachingPrompt.ts`: text-only requests by default, explicit unknowns, authored instructor scenarios and conservative response validation.
 
-Production publishes `visionAdvice` and Anthropic `dataSent` metadata. The arbiter publishes speech, and voice streams it through Sonic. Generated suggestions are ordinary coaching, not priority-zero emergency alerts. Model output never controls the vehicle or audio directly.
+`frameRuntime.ts` preserves the previous image-upload implementation for comparison/regression tests. `localRuntime.ts` preserves the original fixed-warning implementation. Neither is imported by the production entry point. The shared detector/tracker remain reused, not duplicated as simultaneously active pipelines.
 
-Frames are sent to Anthropic; GPS and mic audio are not. Both provider keys stay server-side. No image payload logging. Cancel/reset on pause, seek, trip reset, end and shutdown. One analyzed batch can yield silence.
+Only basic object classes are supplied: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Signs/lights have no OCR/color/applicability interpretation. Image motion may be ego motion; growing boxes are not physical proximity. Track IDs and model memory cannot prove who arrived first. The prompt must not fill these gaps with handbook knowledge.
 
-The old detector implementation is retained as `localRuntime.ts` with detector/tracker/alerts/geometry/config and regression tests. It is not imported by the production entry point. `tests/e2e/videoInference.spec.ts` is a legacy local-detector diagnostic; it does not test VLM coaching. Old HOLDOUT.md records the former detector protocol and has no completed observations.
-
-One live Claude request using actual footage returned valid coaching JSON in about 4.4 seconds. Further replay/holdout review and live speaker/microphone acceptance remain pending. Use longer footage: the current recording is only 11.28 seconds, so analysis plus speech may extend beyond its end.
+See `docs/KNOWN_GAPS.md` for measured latency, current short-video limits and test status; `docs/COACHING_GUIDE.md` for the teaching library and uncertainty requirements. Holdout/instructor review remains pending.

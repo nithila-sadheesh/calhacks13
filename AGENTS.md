@@ -4,6 +4,16 @@ Shared rules for every coding agent (Claude Code, Codex, or other) working in th
 
 Full plan: `docs/DESIGN.md` (exported from the team design doc). Read the section for your owner before starting a task.
 
+## Current approved hybrid revision
+
+The user approved a simple local-CV → Claude → Cartesia implementation. This supersedes the image-upload default described in the previous revision below.
+
+- Production vision runs the existing local detector and tracker, sends bounded scene JSON to Claude, and keeps video pixels on the device. JSON contains object classes, tentative track IDs, confidence, image-side/zone, image displacement and apparent-size trend. GPS/audio are not included.
+- CV does not establish physical distance, vehicle speed/intent, parking status, lane geometry, all-way control, speed limits, signal color or arrival order. Never promote these unknowns into measured facts or instructor commands.
+- Claude chooses coaching from the scene JSON and the existing instruction guide. The existing `visionAdvice` → arbiter → voice flow and generated-text constraints remain active. New scene requests are bounded by a three-second minimum and one request in flight; unchanged nonempty scenes refresh after five seconds.
+- The UI shows local CV boxes and progress while Claude works. Default privacy text must say frames stay local and object descriptions go to Anthropic. Explicit legacy frame-input diagnostics can still upload frames, but are not the production module.
+- Frame-only runtime is retained in `frameRuntime.ts` for comparison/regression tests. Local CV is the single production observation path; no new dependency/model service was added.
+
 ## Approved VLM architecture revision
 
 The user approved replacing local detector decisions with cloud VLM coaching on `integration`, including changes across vision, server, arbiter, voice, UI, shared contracts/mocks and docs. This approval supersedes the original fixed-phrase-only, no-LLM and local-only-video rules for this implementation. Folder ownership remains the coordination default for future work.
