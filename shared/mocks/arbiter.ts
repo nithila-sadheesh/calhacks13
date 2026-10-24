@@ -22,6 +22,7 @@ export function createMockArbiter(): AppModule {
             action: 'spoken',
             reason: 'mock arbiter',
             tripMs: clock.nowMs(),
+            speakId: `speak-${cue.id}`,
           });
         }),
         bus.on('webcamAlert', (alert) => {
@@ -38,6 +39,7 @@ export function createMockArbiter(): AppModule {
             action: 'spoken',
             reason: 'mock arbiter',
             tripMs: clock.nowMs(),
+            speakId: `speak-${alert.id}`,
           });
         }),
       );

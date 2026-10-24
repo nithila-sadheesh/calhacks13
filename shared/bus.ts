@@ -8,8 +8,9 @@ export function createBus(): Bus {
 
   return {
     emit(type, payload) {
-      listeners.get(type)?.forEach((cb) => cb(payload));
+      // onAny first, so the debug log shows an event before any events its listeners emit.
       anyListeners.forEach((cb) => cb(type, payload));
+      listeners.get(type)?.forEach((cb) => cb(payload));
     },
     on(type, cb) {
       const set = listeners.get(type) ?? new Set();

@@ -39,6 +39,7 @@ export type SpeakRequest = {
   sourceId: string; // the MapCue/WebcamAlert id, for the timeline
   text: string; // always present: shown as a caption
   clipKey?: string; // play a bundled clip instead of streaming
+  fallbackClipKey?: string; // bundled clip to play if streaming fails or is slow
   priority: 0 | 1 | 2; // 0 = vision warning, interrupts
   expiresMs?: number;
 };
@@ -48,6 +49,7 @@ export type ArbiterDecision = {
   action: 'queued' | 'spoken' | 'interrupted' | 'dropped' | 'coalesced';
   reason: string; // e.g. 'expired', 'cooldown', 'preempted by alert'
   tripMs: number;
+  speakId?: string; // the SpeakRequest id, on 'spoken' and 'interrupted'
 };
 
 export type DataSent = {

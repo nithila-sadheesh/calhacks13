@@ -29,4 +29,13 @@ describe('bus', () => {
     bus.emit('tripState', { state: 'playing' });
     expect(cb).toHaveBeenCalledWith('tripState', { state: 'playing' });
   });
+
+  it('onAny sees an event before the events its listeners emit', () => {
+    const bus = createBus();
+    const seen: string[] = [];
+    bus.onAny((type) => seen.push(type));
+    bus.on('tripState', () => bus.emit('tripReset', { tripMs: 0 }));
+    bus.emit('tripState', { state: 'playing' });
+    expect(seen).toEqual(['tripState', 'tripReset']);
+  });
 });
