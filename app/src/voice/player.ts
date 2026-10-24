@@ -1,4 +1,5 @@
 import { SAMPLE_RATE } from './config.ts';
+import { createLoudnessChain } from './loudness.ts';
 
 export type Playback = { stop(): void };
 export type AudioPlayer = {
@@ -14,6 +15,7 @@ export type AudioPlayer = {
 
 export function createAudioPlayer(): AudioPlayer {
   const context = new AudioContext();
+  const output = createLoudnessChain(context);
   const playing = new Set<Playback>();
   let nextTime = 0;
   return {
@@ -24,7 +26,7 @@ export function createAudioPlayer(): AudioPlayer {
       buffer.copyToChannel(Float32Array.from(samples), 0);
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(context.destination);
+      source.connect(output);
       const start = Math.max(context.currentTime + 0.015, nextTime);
       nextTime = start + buffer.duration;
       let timer: ReturnType<typeof setTimeout>;

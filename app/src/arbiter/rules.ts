@@ -20,6 +20,8 @@ export const SYSTEM_TTL_MS = 10000;
 export const WATCHDOG_SLACK_MS = 4000; // on top of the estimated speech length
 const CHARS_PER_SECOND = 14;
 
+export const NOTHING_TO_REPEAT = 'Nothing to repeat yet.';
+
 export const CAMERA_PAUSED = {
   sourceId: 'camera-paused',
   text: 'Camera paused. Route reminders only.',
@@ -54,7 +56,9 @@ export type ArbiterState = {
   current?: { item: Item; speakId: string; startedMs: number };
   spokenKeys: ReadonlySet<string>;
   lastAlertMs: Readonly<Partial<Record<WebcamAlert['kind'], number>>>;
-  lastCue?: Item;
+  // The last line that "repeat" can replay: a route reminder, an answer or a system line. Never a
+  // vision warning: replayed late, "pedestrian ahead" would describe a moment that has passed.
+  lastLine?: Item;
   cueWording: ReadonlyMap<string, string>; // featureId -> Claude wording, used if it arrived in time
   lastEndMs?: number;
   muted: boolean;
@@ -297,8 +301,22 @@ function onVoice(run: Run, kind: 'repeat' | 'mute' | 'unmute') {
     });
     return;
   }
-  const last = s.lastCue;
-  if (!last) return decide(run, 'repeat', 'dropped', 'nothing to repeat');
+  const last = s.lastLine;
+  if (!last) {
+    // Said out loud, so the driver knows the request was heard without looking at the screen.
+    offer(run, {
+      origin: 'repeat',
+      sourceId: 'repeat',
+      text: NOTHING_TO_REPEAT,
+      priority: 1,
+      earliestMs: nowMs,
+      expiresMs: nowMs + REPEAT_TTL_MS,
+      gapMs: REPLAY_GAP_MS,
+      why: 'nothing to repeat',
+      replayed: false,
+    });
+    return;
+  }
   offer(run, {
     ...last,
     origin: 'repeat',
@@ -376,7 +394,8 @@ function speak(run: Run, item: Item) {
   s.current = { item, speakId, startedMs: nowMs };
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
-  if (item.origin === 'cue') s.lastCue = item;
+  if (item.origin === 'cue' || item.origin === 'answer' || item.origin === 'system')
+    s.lastLine = item;
 
   const request: SpeakRequest = {
     id: speakId,

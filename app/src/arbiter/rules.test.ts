@@ -10,6 +10,7 @@ import {
   ALERT_COOLDOWN_MS,
   ANSWER_TTL_MS,
   CAMERA_PAUSED,
+  NOTHING_TO_REPEAT,
   type ArbiterState,
   type Effect,
   type Input,
@@ -353,10 +354,11 @@ describe('rule: repeat', () => {
     expect(h.speaks).toHaveLength(2);
   });
 
-  it('drops a repeat when no cue has been spoken', () => {
+  it('says out loud that there is nothing to repeat when nothing was said yet', () => {
     const h = new Harness();
     h.send({ type: 'voice', kind: 'repeat' }, 0);
-    expect(h.decisions).toEqual([['repeat', 'dropped', 'nothing to repeat']]);
+    expect(h.speaks.map((s) => [s.sourceId, s.text])).toEqual([['repeat', NOTHING_TO_REPEAT]]);
+    expect(h.decisions).toEqual([['repeat', 'spoken', 'nothing to repeat']]);
   });
 
   it('does not repeat an alert', () => {
@@ -364,7 +366,39 @@ describe('rule: repeat', () => {
     h.send({ type: 'alert', alert: alert() }, 0);
     h.end(1500);
     h.send({ type: 'voice', kind: 'repeat' }, 2000);
-    expect(h.decisions.at(-1)).toEqual(['repeat', 'dropped', 'nothing to repeat']);
+    h.send({ type: 'tick' }, 1500 + REPLAY_GAP_MS);
+    expect(h.speaks.at(-1)?.text).toBe(NOTHING_TO_REPEAT);
+  });
+
+  it('repeats the last line of any kind except a warning: here, an answer', () => {
+    const h = new Harness();
+    h.send({ type: 'cue', cue: cue() }, 0);
+    h.end(3000);
+    h.send(
+      {
+        type: 'answer',
+        reply: { id: 'answer-1', queryId: 'q-1', text: 'The stop sign is close.', tripMs: 4000 },
+      },
+      4000,
+    );
+    h.end(6000);
+    h.send({ type: 'alert', alert: alert({ tripMs: 7000, expiresMs: 8500 }) }, 7000);
+    h.end(8500);
+    h.send({ type: 'voice', kind: 'repeat' }, 9000);
+    h.send({ type: 'tick' }, 8500 + REPLAY_GAP_MS);
+    expect(h.speaks.at(-1)).toMatchObject({
+      sourceId: 'answer-1',
+      text: 'The stop sign is close.',
+    });
+    expect(h.decisions.at(-1)).toEqual(['answer-1', 'spoken', 'repeat requested']);
+  });
+
+  it('a repeated camera-paused line plays its clip again', () => {
+    const h = new Harness();
+    h.send({ type: 'camera', ok: false }, 0);
+    h.end(2000);
+    h.send({ type: 'voice', kind: 'repeat' }, 3000);
+    expect(h.speaks.at(-1)).toMatchObject({ clipKey: 'cameraPaused' });
   });
 
   it('coalesces a second repeat while one is queued', () => {

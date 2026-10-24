@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBus } from '../../../shared/bus.ts';
-import { createPushToTalk, END_OF_SPEECH_MS, LISTEN_MS } from './pushToTalk.ts';
+import { createPushToTalk, MAX_LISTEN_MS } from './pushToTalk.ts';
 import type { openCapture } from './capture.ts';
 import type { openInk } from './ink.ts';
 
@@ -72,38 +72,47 @@ async function settle() {
 }
 
 describe('tap-to-talk', () => {
-  it('fires the command as soon as Ink hears it, joining spaced segments', async () => {
+  it('records until the second tap, then runs the command from the whole utterance', async () => {
     const s = setup();
     await s.mic.start();
     // Not "listening" until the microphone delivers audio: speech before that is lost.
     expect(s.status).toHaveBeenLastCalledWith('connecting');
     s.samples(new Float32Array(4800));
     expect(s.status).toHaveBeenLastCalledWith('listening');
-    // Ink final segments carry their own leading space.
+    // Ink final segments carry their own leading space; a matching first segment does not stop it.
     s.callbacks().onTranscript(' repeat');
-    expect(s.commands).toHaveBeenCalledWith({ kind: 'repeat', transcript: 'repeat' });
+    expect(s.commands).not.toHaveBeenCalled();
+    expect(s.stop).not.toHaveBeenCalled();
+    s.callbacks().onTranscript(' that.');
+    s.mic.toggle();
     expect(s.stop).toHaveBeenCalledTimes(1);
-    expect(s.cancel).toHaveBeenCalled();
-    expect(s.status).toHaveBeenLastCalledWith('idle');
+    expect(s.finish).toHaveBeenCalledTimes(1);
+    expect(s.status).toHaveBeenLastCalledWith('transcribing');
     expect(s.sent).toHaveBeenCalledWith({
       destination: 'cartesia-stt',
       summary: 'mic audio, 0.10 s',
       tripMs: 123,
     });
-    s.callbacks().onTranscript(' that.');
+    s.callbacks().onComplete();
+    expect(s.commands).toHaveBeenCalledWith({ kind: 'repeat', transcript: 'repeat that.' });
+    expect(s.status).toHaveBeenLastCalledWith('idle');
     s.callbacks().onComplete();
     expect(s.commands).toHaveBeenCalledTimes(1);
   });
 
-  it('matches a command split across segments only once it is complete', async () => {
+  it('a pause mid-sentence does not end the recording', async () => {
     const s = setup();
     await s.mic.start();
-    s.callbacks().onTranscript(' can you');
-    expect(s.commands).not.toHaveBeenCalled();
-    s.callbacks().onTranscript(' say that again?');
-    expect(s.commands).toHaveBeenCalledWith({
-      kind: 'repeat',
-      transcript: 'can you say that again?',
+    s.callbacks().onTranscript(' okay so,');
+    s.callbacks().onTranscript(' what does a yield');
+    s.callbacks().onTranscript(' sign mean when I am turning right?');
+    expect(s.finish).not.toHaveBeenCalled();
+    s.mic.toggle();
+    s.callbacks().onComplete();
+    expect(s.queries).toHaveBeenCalledWith({
+      id: 'query-1',
+      transcript: 'okay so, what does a yield sign mean when I am turning right?',
+      tripMs: 123,
     });
   });
 
@@ -123,10 +132,10 @@ describe('tap-to-talk', () => {
     expect(s.send).toHaveBeenCalledTimes(3);
   });
 
-  it('finalizes after the listening window and acts on the completed utterance', async () => {
+  it('stops a microphone left on by mistake after the maximum window', async () => {
     const s = setup();
     await s.mic.start();
-    expect(s.timers[0]?.ms).toBe(LISTEN_MS);
+    expect(s.timers[0]?.ms).toBe(MAX_LISTEN_MS);
     s.expire();
     expect(s.stop).toHaveBeenCalledTimes(1);
     expect(s.finish).toHaveBeenCalledTimes(1);
@@ -134,6 +143,7 @@ describe('tap-to-talk', () => {
     s.samples(new Float32Array(480));
     expect(s.send).not.toHaveBeenCalled();
     s.callbacks().onTranscript(' Mute.');
+    s.callbacks().onComplete();
     expect(s.commands).toHaveBeenCalledWith({ kind: 'mute', transcript: 'Mute.' });
   });
 
@@ -160,24 +170,6 @@ describe('tap-to-talk', () => {
       tripMs: 123,
     });
     expect(s.status).toHaveBeenLastCalledWith('idle');
-  });
-
-  it('sends a question once the speaker pauses, waiting while they keep talking', async () => {
-    const s = setup();
-    await s.mic.start();
-    s.callbacks().onTranscript(' how far is');
-    const firstQuiet = s.timers.at(-1)!;
-    expect(firstQuiet.ms).toBe(END_OF_SPEECH_MS);
-    s.callbacks().onTranscript(' the stop sign?');
-    expect(firstQuiet.cleared).toBe(true);
-    s.timers.at(-1)!.cb();
-    expect(s.finish).toHaveBeenCalledTimes(1);
-    s.callbacks().onComplete();
-    expect(s.queries).toHaveBeenCalledWith({
-      id: 'query-1',
-      transcript: 'how far is the stop sign?',
-      tripMs: 123,
-    });
   });
 
   it('sends nothing when nothing was said', async () => {

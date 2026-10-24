@@ -35,6 +35,19 @@ class Context {
     this.sources.push(source);
     return source;
   }
+  node = () => ({ connect: vi.fn() });
+  param = () => ({ value: 0 });
+  compressor = {
+    ...this.node(),
+    threshold: this.param(),
+    knee: this.param(),
+    ratio: this.param(),
+    attack: this.param(),
+    release: this.param(),
+  };
+  createDynamicsCompressor = () => this.compressor;
+  createGain = () => ({ ...this.node(), gain: this.param() });
+  createWaveShaper = () => ({ ...this.node(), curve: null, oversample: 'none' });
 }
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -85,4 +98,17 @@ it('stops all scheduled nodes and resets the queue so a warning starts immediate
   expect(start).not.toHaveBeenCalled();
   expect(end).not.toHaveBeenCalled();
   player.close();
+});
+
+it('plays everything through the loudness chain, not straight to the speakers', () => {
+  vi.stubGlobal('AudioContext', Context);
+  const player = createAudioPlayer();
+  player.play(
+    new Float32Array(240),
+    () => {},
+    () => {},
+  );
+  const source = Context.last.sources[0]!;
+  expect(source.connect).toHaveBeenCalledWith(Context.last.compressor);
+  expect(source.connect).not.toHaveBeenCalledWith(Context.last.destination);
 });

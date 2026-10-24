@@ -19,14 +19,17 @@ const context: TripContext = {
   upcoming: [{ kind: 'stopSign', street: 'Oxford Street', distM: 60 }],
 };
 
+const usage = { input_tokens: 120, output_tokens: 20, cache_read_input_tokens: 4000 };
+
 function setup(reply: { say: string; action?: string } | 'refusal' | Error) {
   const create = vi.fn(async (body: unknown) => {
     void body;
     if (reply instanceof Error) throw reply;
-    if (reply === 'refusal') return { stop_reason: 'refusal', content: [] };
+    if (reply === 'refusal') return { stop_reason: 'refusal', content: [], usage };
     return {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: JSON.stringify({ action: 'none', ...reply }) }],
+      usage,
     };
   });
   const handler = createAssistantHandler({
@@ -47,7 +50,7 @@ function setup(reply: { say: string; action?: string } | 'refusal' | Error) {
 const ask = (question: string) => ({ mode: 'answer', question, context });
 
 describe('assistant endpoint', () => {
-  it('answers from the trip context with Sonnet 5.5 at low effort and a fixed schema', async () => {
+  it('answers from the trip context with Sonnet 5.5, thinking off, and a fixed schema', async () => {
     const s = setup({ say: 'The stop sign on Oxford Street is about 60 meters ahead.' });
     const response = await s.post(ask('how far is the stop sign'));
     expect(await response.json()).toEqual({
@@ -58,6 +61,7 @@ describe('assistant endpoint', () => {
       model: MODEL,
       fallbacks: 'default',
       betas: ['server-side-fallback-2026-07-01'],
+      thinking: { type: 'between_tools' },
       output_config: { effort: 'low', format: { type: 'json_schema' } },
     });
     expect(JSON.stringify(body.messages)).toContain('Oxford Street');
@@ -134,9 +138,14 @@ describe('assistant endpoint', () => {
   it('sends the rules and examples together for answers, and every example line is safe to speak', async () => {
     const s = setup({ say: 'ok' });
     await s.post(ask('what does a yield sign mean'));
-    const body = s.create.mock.calls[0]![0] as { system: string };
-    expect(body.system).toContain(ANSWER_SYSTEM);
-    expect(body.system).toContain(ANSWER_EXAMPLES);
+    const body = s.create.mock.calls[0]![0] as {
+      system: Array<{ text: string; cache_control?: unknown }>;
+    };
+    // One cached block: the rules and examples never change, so later calls read them cheaply.
+    expect(body.system).toHaveLength(1);
+    expect(body.system[0]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(body.system[0]!.text).toContain(ANSWER_SYSTEM);
+    expect(body.system[0]!.text).toContain(ANSWER_EXAMPLES);
 
     const lines = [...ANSWER_EXAMPLES.matchAll(/^\{"say": "([^"]*)", "action"/gm)].map(
       (m) => m[1]!,

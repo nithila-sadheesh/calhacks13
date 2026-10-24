@@ -1,9 +1,9 @@
-// Tap-to-talk. One tap opens the microphone and an Ink session. A fixed command ("repeat that",
-// "mute", "unmute") fires the moment Ink's final transcript matches. Anything else is a question:
-// listening ends after END_OF_SPEECH_MS of quiet once something was said (or LISTEN_MS in all, or
-// a second tap), and the whole utterance goes out as `voiceQuery` for the assistant. Mic audio goes
-// to Ink only during that window. Audio captured while Ink is still connecting is buffered and
-// sent once it opens, so speaking right after the tap is not lost.
+// Tap to start, tap again to stop. The first tap opens the microphone and an Ink session; the
+// second tap stops recording and Ink finalizes the whole utterance. Then a fixed command ("repeat
+// that", "mute", "unmute") runs, or anything else goes out as `voiceQuery` for the assistant.
+// Nothing ends the recording early: guessing the end from pauses cut people off mid-sentence.
+// MAX_LISTEN_MS only stops a microphone left on by mistake. Mic audio goes to Ink only between
+// the taps. Audio captured while Ink is still connecting is buffered and sent once it opens.
 import type { Bus, TripClock } from '../../../shared/types.ts';
 import { commandFromTranscript } from './pcm.ts';
 import { openCapture, type CaptureSession } from './capture.ts';
@@ -11,8 +11,7 @@ import { openInk, type InkSession } from './ink.ts';
 
 export type MicStatus = 'idle' | 'connecting' | 'listening' | 'transcribing' | 'error';
 
-export const LISTEN_MS = 8000;
-export const END_OF_SPEECH_MS = 1200;
+export const MAX_LISTEN_MS = 30_000;
 // Cap on audio held back while Ink connects; older audio is dropped first.
 const MAX_BUFFERED_S = 3;
 
@@ -39,7 +38,6 @@ export function createPushToTalk(options: {
     reported: boolean;
     transcript: string;
     timer?: unknown;
-    quiet?: unknown;
     hearing?: boolean;
   };
   let queries = 0;
@@ -57,7 +55,6 @@ export function createPushToTalk(options: {
   function close(session: Session) {
     session.listening = false;
     clearTimer(session.timer);
-    clearTimer(session.quiet);
     session.capture?.stop();
     report(session);
     session.controller.abort();
@@ -78,18 +75,11 @@ export function createPushToTalk(options: {
     session.ink!.send(samples);
     session.sentSamples += samples.length;
   }
-  function act(session: Session, kind: NonNullable<ReturnType<typeof commandFromTranscript>>) {
-    current = undefined;
-    close(session);
-    options.status('idle');
-    options.bus.emit('voiceCommand', { kind, transcript: session.transcript });
-  }
   // Stop listening and let Ink finalize what it has heard.
   function finish(session: Session) {
     if (current !== session || !session.listening) return;
     session.listening = false;
     clearTimer(session.timer);
-    clearTimer(session.quiet);
     // No microphone yet (permission prompt still open): nothing was heard.
     if (!session.capture) {
       cancel();
@@ -148,22 +138,14 @@ export function createPushToTalk(options: {
         return;
       }
       // The listening window starts at the tap, while Ink connects; buffered audio counts.
-      session.timer = setTimer(() => finish(session), LISTEN_MS);
+      session.timer = setTimer(() => finish(session), MAX_LISTEN_MS);
       const ink = await (options.ink ?? openInk)({
         sampleRate: capture.sampleRate,
         signal: session.controller.signal,
         onTranscript(text) {
           if (current !== session) return;
+          // Collected until the second tap; the whole utterance is interpreted in onComplete.
           session.transcript = `${session.transcript} ${text}`.replace(/\s+/g, ' ').trim();
-          const kind = commandFromTranscript(session.transcript);
-          if (kind) {
-            act(session, kind);
-            return;
-          }
-          // A question: wait for a pause, then send the whole utterance.
-          if (!session.listening || !session.transcript) return;
-          clearTimer(session.quiet);
-          session.quiet = setTimer(() => finish(session), END_OF_SPEECH_MS);
         },
         onComplete() {
           if (current !== session || session.listening) return;

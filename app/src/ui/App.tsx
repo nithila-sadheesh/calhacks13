@@ -24,7 +24,9 @@ export function App({ bus, modules }: AppProps) {
         <ul className="privacy">
           <li>Video frames stay on the device.</li>
           <li>Spoken reminder text is sent to Cartesia Sonic.</li>
-          <li>Microphone audio is sent to Cartesia Ink only for a few seconds after you tap.</li>
+          <li>
+            Microphone audio is sent to Cartesia Ink only between your two taps of the talk button.
+          </li>
           <li>
             Your spoken questions and a short trip summary (recent reminders, upcoming streets,
             speed) are sent to Claude. Never video or GPS coordinates.
@@ -50,7 +52,7 @@ export function App({ bus, modules }: AppProps) {
       </div>
       <p className="muted">
         Live uses this device&apos;s rear camera to spot pedestrians and its location to time route
-        reminders. The microphone is used only after you tap the talk button.
+        reminders. The microphone records only between your two taps of the talk button.
       </p>
     </main>
   );

@@ -7,13 +7,15 @@ import type { MicStatus } from './pushToTalk.ts';
 const MIC_LABELS: Record<MicStatus, string> = {
   idle: 'Tap the microphone and ask anything, or say “repeat that”, “mute” or “unmute”.',
   connecting: 'Starting microphone…',
-  listening: 'Listening… speak now.',
+  listening: 'Listening… tap again when you’re done.',
   transcribing: 'Recognizing…',
   error: 'Microphone or voice connection failed. Check permissions and tap to try again.',
 };
 const COMMAND_LABELS = { repeat: 'Repeat', mute: 'Mute', unmute: 'Unmute' } as const;
+// Shown, never spoken: the assistant stays silent when speech was unclear.
+const NOT_HEARD = "Didn't catch that. Tap and try again.";
 const ACTION_RESULTS = {
-  repeat: 'Repeating the last reminder.',
+  repeat: 'Repeating the last line.',
   mute: 'Reminders muted. Warnings still play.',
   unmute: 'Reminders back on.',
 } as const;
@@ -32,10 +34,18 @@ export function VoicePanel({ ctx }: PanelProps) {
   const reply = query && [...replies].reverse().find((r) => r.queryId === query.id);
   const last = started.at(-1);
   const command = commands.at(-1);
-  const nothingToRepeat =
-    command?.kind === 'repeat' &&
-    decisions.at(-1)?.sourceId === 'repeat' &&
-    decisions.at(-1)?.reason === 'nothing to repeat';
+  // What "repeat" really did, from the arbiter's log, rather than what was asked for.
+  const lastRepeat = [...decisions]
+    .reverse()
+    .find((d) => d.reason === 'repeat requested' || d.reason === 'nothing to repeat');
+  const repeatResult =
+    lastRepeat?.reason === 'nothing to repeat'
+      ? 'Nothing to repeat yet.'
+      : lastRepeat
+        ? 'Repeating the last line.'
+        : 'Repeating…';
+  const actionResult = (action: keyof typeof ACTION_RESULTS) =>
+    action === 'repeat' ? repeatResult : ACTION_RESULTS[action];
   const active = status === 'connecting' || status === 'listening';
   useEffect(() => {
     const hidden = () => {
@@ -73,7 +83,7 @@ export function VoicePanel({ ctx }: PanelProps) {
         <button
           type="button"
           className={`mic-button mic-${status}`}
-          aria-label={active ? 'Stop listening' : 'Talk'}
+          aria-label={active ? 'Stop and send' : 'Talk'}
           aria-pressed={active}
           onClick={() => voiceModule.toggleTalk()}
         >
@@ -86,7 +96,7 @@ export function VoicePanel({ ctx }: PanelProps) {
         {command && (!query || command.transcript !== query.transcript) && (
           <p className="muted">
             Heard: {COMMAND_LABELS[command.kind]}
-            {nothingToRepeat ? '. Nothing to repeat yet.' : ''}
+            {command.kind === 'repeat' ? `. ${repeatResult}` : ''}
           </p>
         )}
         {query && (
@@ -94,15 +104,15 @@ export function VoicePanel({ ctx }: PanelProps) {
             <p className="muted">You asked: “{query.transcript}”</p>
             <p>
               {reply
-                ? (reply.text ?? (reply.action ? ACTION_RESULTS[reply.action] : ''))
+                ? (reply.text ?? (reply.action ? actionResult(reply.action) : NOT_HEARD))
                 : 'Thinking…'}
             </p>
           </div>
         )}
       </div>
       <p className="muted">
-        Microphone audio goes to Cartesia only for a few seconds after you tap; questions go to
-        Claude. For the supervisor or a parked learner.
+        Microphone audio goes to Cartesia only between your two taps; questions go to Claude. For
+        the supervisor or a parked learner.
       </p>
     </section>
   );

@@ -93,6 +93,15 @@ Bundled clips (Nithila, generated with Sonic and shipped in `fixtures/audio/`):
 - `Camera paused. Route reminders only.`
 - `Turn ahead.` / `Stop sign ahead.` / `Crosswalk ahead.` (network fallbacks)
 
+Assistant fixed lines (`server/assistant.ts`, `app/src/assistant/`):
+- `That's for your supervisor to judge.` (Claude's refusal for the safety rules)
+- `I can only answer driving-related questions.` (Claude's reply to off-topic requests)
+- `That's for your supervisor to judge. Keep your eyes on the road.` (replaces any generated line the safety filter blocks)
+- `Sorry, I can't answer that right now.` (the request failed or Claude declined)
+- `Nothing to repeat yet.` (the arbiter, when "repeat" has no earlier line to replay)
+
+Claude's answers and its route-reminder wording are generated, so they are not listed here. Every generated line must pass `shared/safeWording.ts` before it can be spoken or shown.
+
 ## 9. Git workflow
 
 - One branch per person: `rohit/<topic>`, `nithila/<topic>`, `tejas/<topic>`, `jeev/<topic>`.
