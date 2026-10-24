@@ -1,8 +1,14 @@
 // The replay clock. The shared <video> is the only time source: tripMs = currentTime x 1000.
 // Publishes `tripState` on play/pause/end, and `tripReset` (plus onReset callbacks) on any seek.
-import type { Bus, TripClock } from '../../../shared/types.ts';
+// Playback is locked to 1x: the judged run is real time only.
+import type { Bus, Events, TripClock } from '../../../shared/types.ts';
 
-export function createReplay(video: HTMLVideoElement, bus: Bus) {
+export type ReplayVideo = Pick<
+  HTMLVideoElement,
+  'currentTime' | 'paused' | 'ended' | 'playbackRate' | 'addEventListener' | 'removeEventListener'
+>;
+
+export function createReplay(video: ReplayVideo, bus: Bus) {
   const resetCallbacks = new Set<(tripMs: number) => void>();
   const nowMs = () => video.currentTime * 1000;
 
@@ -18,6 +24,7 @@ export function createReplay(video: HTMLVideoElement, bus: Bus) {
         bus.emit('tripReset', { tripMs });
       },
     ],
+    ['ratechange', () => video.playbackRate !== 1 && (video.playbackRate = 1)],
   ];
   listeners.forEach(([event, handler]) => video.addEventListener(event, handler));
 
@@ -31,9 +38,19 @@ export function createReplay(video: HTMLVideoElement, bus: Bus) {
 
   return {
     clock,
+    // Publishes the current state once, for modules that start after playback events happened.
+    announce() {
+      bus.emit('tripState', { state: currentState(video) });
+    },
     dispose() {
       listeners.forEach(([event, handler]) => video.removeEventListener(event, handler));
       resetCallbacks.clear();
     },
   };
+}
+
+export function currentState(video: ReplayVideo): Events['tripState']['state'] {
+  if (video.ended) return 'ended';
+  if (!video.paused) return 'playing';
+  return video.currentTime === 0 ? 'idle' : 'paused';
 }
