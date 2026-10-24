@@ -16,7 +16,7 @@ Before your first edit, confirm which person you are working for. If you don't k
 | --- | --- | --- |
 | Jeev | Route, map cues, drive fixtures | `app/src/map/`, `scripts/route/`, `scripts/track/`, `fixtures/demo-drive/route.json`, `features.json`, `track.json`, `annotations.json` |
 | Tejas | Vision and overlay | `app/src/vision/` |
-| Nithila | Cartesia voice, server, deploy | `app/src/voice/`, `server/`, `scripts/voice/`, `fixtures/audio/`, `vercel.json` |
+| Nithila | Cartesia voice, server, deploy | `app/src/voice/`, `api/`, `scripts/voice/`, `fixtures/audio/`, `vercel.json` |
 | Rohit | Replay clock, arbiter, app shell, integration | `shared/`, `app/src/replay/`, `app/src/arbiter/`, `app/src/ui/`, `app/src/main.tsx`, `package.json`, lockfile, root config files, `tests/e2e/`, `.gitignore`, `.env.example` |
 
 Shared by nobody: `fixtures/demo-drive/video.mp4` (team recording; Rohit commits it via Git LFS), `docs/` (edit only when your human asks).

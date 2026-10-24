@@ -1,4 +1,10 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": {
+    "api/cartesia-token.ts": {
+      "maxDuration": 15
+    }
+  }
 }

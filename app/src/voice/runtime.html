@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Voice integration test</title>
+    <style>
+      body {
+        font: 18px system-ui;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f4f6f8;
+      }
+      button {
+        font: inherit;
+        padding: 12px;
+        margin: 5px;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: white;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Voice integration test</h1>
+    <p>
+      This page uses the app's production playback engine. Only reminder text goes to Cartesia.
+      Video and location are not sent. Microphone audio goes to Ink only while Hold to talk is held.
+    </p>
+    <p id="ready" role="status">Loading bundled clips…</p>
+    <button id="enable">Enable sound</button
+    ><button id="route" disabled>Stream turn reminder</button
+    ><button id="warning" disabled>Interrupt with pedestrian warning</button
+    ><button id="reset" disabled>Reset audio</button>
+    <p id="latency">No audio has started.</p>
+    <button id="talk" style="touch-action: none" type="button">Hold to talk</button>
+    <p id="mic" role="status">Microphone idle.</p>
+    <p>
+      Generate the six clips with <code>npm run clips</code>, then refresh. Test interruption during
+      a reminder. To test fallback, disconnect Wi-Fi before starting a reminder; “Turn ahead.”
+      should play. The warning must work without Wi-Fi after this page loads.
+    </p>
+    <pre id="log" role="log" aria-live="polite"></pre>
+    <script type="module" src="./runtime.ts"></script>
+  </body>
+</html>
