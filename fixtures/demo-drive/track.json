@@ -1,0 +1,7 @@
+{
+  "syncOffsetMs": 0,
+  "points": [
+    { "tMs": 0, "lat": 37.8716, "lon": -122.2727, "speedMps": 9, "headingDeg": 90, "accuracyM": 5 },
+    { "tMs": 10000, "lat": 37.8716, "lon": -122.2716, "speedMps": 9, "headingDeg": 90, "accuracyM": 5 }
+  ]
+}

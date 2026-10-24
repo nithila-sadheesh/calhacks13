@@ -1,0 +1,11 @@
+[
+  {
+    "id": "placeholder-stop-1",
+    "kind": "stopSign",
+    "lat": 37.8716,
+    "lon": -122.2718,
+    "routeDistM": 90,
+    "source": "curated",
+    "note": "Placeholder until scripts/route/fetchRoute.ts runs on the real route"
+  }
+]
