@@ -1,8 +1,11 @@
+import { parseCvScene, type CvScene } from './cvScene.ts';
 // VLM wire format and validation shared by the browser and server.
 export type VideoFrame = { tripMs: number; jpeg: string };
 export type SceneMemory = { tripMs: number; observations: string[]; uncertainties: string[] };
 export type CoachingRequest = {
-  frames: VideoFrame[];
+  frames?: VideoFrame[];
+  scene?: CvScene;
+  previousScenes?: CvScene[];
   recentAdvice: string[];
   sceneMemory?: SceneMemory[];
 };
@@ -110,6 +113,40 @@ export function parseCoachingResponse(value: unknown): CoachingResponse | undefi
 export function parseCoachingRequest(value: unknown): CoachingRequest | undefined {
   if (!value || typeof value !== 'object') return;
   const item = value as Record<string, unknown>;
+  if (item.scene !== undefined) {
+    if (
+      item.frames !== undefined ||
+      !Array.isArray(item.recentAdvice) ||
+      item.recentAdvice.length > 3 ||
+      !item.recentAdvice.every(validCoachingText)
+    )
+      return;
+    const scene = parseCvScene(item.scene);
+    if (!scene) return;
+    const previousScenes: CvScene[] = [];
+    if (item.previousScenes !== undefined) {
+      if (!Array.isArray(item.previousScenes) || item.previousScenes.length > 3) return;
+      for (const raw of item.previousScenes) {
+        const prior = parseCvScene(raw);
+        if (
+          !prior ||
+          prior.tripMs >= scene.tripMs ||
+          scene.tripMs - prior.tripMs > SCENE_MEMORY_MS ||
+          (previousScenes.length > 0 &&
+            prior.tripMs <= previousScenes[previousScenes.length - 1]!.tripMs)
+        )
+          return;
+        previousScenes.push(prior);
+      }
+    }
+    const result: CoachingRequest = { scene, previousScenes, recentAdvice: item.recentAdvice };
+    if (item.sceneMemory !== undefined) {
+      const memory = parseSceneMemory(item.sceneMemory, scene.tripMs);
+      if (!memory) return;
+      result.sceneMemory = memory;
+    }
+    return result;
+  }
   if (
     !Array.isArray(item.frames) ||
     item.frames.length < 2 ||

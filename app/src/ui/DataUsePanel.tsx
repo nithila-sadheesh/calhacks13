@@ -14,8 +14,8 @@ export function DataUsePanel({ bus }: { bus: Bus }) {
     <section className="panel" aria-label="Data use">
       <h2>Data use</h2>
       <p>
-        Sampled frames: sent to Anthropic. GPS: not sent. Reminder text and held microphone audio:
-        sent to Cartesia.
+        Local CV keeps video frames on this device. Object descriptions go to Anthropic. GPS: not
+        sent. Reminder text and held microphone audio: sent to Cartesia.
       </p>
       {sent.length === 0 ? (
         <p className="muted">Nothing sent yet.</p>

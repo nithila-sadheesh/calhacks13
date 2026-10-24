@@ -49,7 +49,9 @@ test('setup screen requires the supervisor check', async ({ page }) => {
   const start = page.getByRole('button', { name: 'Load demo drive' });
   await expect(start).toBeDisabled();
   await expect(
-    page.getByText('Sampled video frames are sent to Anthropic Claude for coaching.'),
+    page.getByText(
+      'Video frames stay on this device. Local object descriptions are sent to Anthropic Claude for coaching.',
+    ),
   ).toBeVisible();
   await page.getByRole('checkbox').check();
   await expect(start).toBeEnabled();

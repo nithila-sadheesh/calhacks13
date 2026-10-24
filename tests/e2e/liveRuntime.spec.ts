@@ -29,9 +29,15 @@ test('live recorded replay measures Claude coaching and Cartesia playback', asyn
     });
   });
   const starts = new WeakMap<object, number>();
+  const scenes: unknown[] = [];
   const observations: Promise<void>[] = [];
   page.on('request', (request) => {
-    if (request.url().endsWith('/api/vision-advice')) starts.set(request, performance.now());
+    if (request.url().endsWith('/api/vision-advice')) {
+      starts.set(request, performance.now());
+      const input = request.postDataJSON() as { scene?: unknown; frames?: unknown };
+      if (input.scene) scenes.push(input.scene);
+      expect(input.frames).toBeUndefined();
+    }
   });
   page.on('response', (response) => {
     if (response.url().endsWith('/api/cartesia-token')) tokenStatuses.push(response.status());
@@ -82,7 +88,7 @@ test('live recorded replay measures Claude coaching and Cartesia playback', asyn
   await Promise.allSettled(observations);
   console.log(
     'Live replay measurements:',
-    JSON.stringify({ responses, advice, speech, audible, ended, tokenStatuses }),
+    JSON.stringify({ responses, scenes, advice, speech, audible, ended, tokenStatuses }),
   );
   expect(responses.some((response) => response.status === 200)).toBe(true);
   // Silence is a valid model decision; require audio only when the arbiter requests it.

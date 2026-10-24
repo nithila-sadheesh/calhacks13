@@ -3,7 +3,16 @@
 // timing still comes only from ctx.clock.nowMs() (AGENTS.md rule 5).
 
 // COCO classes we keep (detector allowlist). EfficientDet-Lite0 uses COCO label names.
-export const DETECTOR_CLASSES = ['person', 'bicycle', 'car', 'truck', 'bus', 'motorcycle'] as const;
+export const DETECTOR_CLASSES = [
+  'person',
+  'bicycle',
+  'car',
+  'truck',
+  'bus',
+  'motorcycle',
+  'stop sign',
+  'traffic light',
+] as const;
 export type DetectorClass = (typeof DETECTOR_CLASSES)[number];
 export const VEHICLE_CLASSES: readonly DetectorClass[] = ['car', 'truck', 'bus', 'motorcycle'];
 

@@ -21,7 +21,10 @@ export function App({ bus, modules }: AppProps) {
       <section className="panel">
         <h2>What leaves this device</h2>
         <ul className="privacy">
-          <li>Sampled video frames are sent to Anthropic Claude for coaching.</li>
+          <li>
+            Video frames stay on this device. Local object descriptions are sent to Anthropic Claude
+            for coaching.
+          </li>
           <li>Spoken reminder text is sent to Cartesia Sonic.</li>
           <li>Microphone audio is sent to Cartesia Ink only while push-to-talk is held.</li>
           <li>

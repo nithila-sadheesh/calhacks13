@@ -102,14 +102,12 @@ it('limits request bursts and resets the warm-instance window', async () => {
 });
 
 it('does not apply Sonnet-specific thinking options to an overridden model', async () => {
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockResolvedValue(
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(advice) }],
-      }),
-    );
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
   const handler = createVisionAdviceHandler({
     getKey: () => 'test-only-key',
     getModel: () => 'claude-haiku-5-5',
@@ -122,4 +120,39 @@ it('does not apply Sonnet-specific thinking options to an overridden model', asy
   };
   expect(sent.thinking).toBeUndefined();
   expect(sent.output_config.effort).toBeUndefined();
+});
+
+it('sends CV observations as text without image blocks or invented scene fields', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(
+      Response.json({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(advice) }],
+      }),
+    );
+  const handler = createVisionAdviceHandler({ getKey: () => 'test-only-key', fetcher });
+  const scene = {
+    tripMs: 1000,
+    objects: [
+      {
+        id: 1,
+        class: 'car',
+        confidence: 0.9,
+        imageSide: 'left',
+        imageZone: 'middle',
+        imageMotion: 'unknown',
+        apparentSize: 'unknown',
+        visibleForMs: 600,
+      },
+    ],
+  };
+  expect((await handler(request({ scene, recentAdvice: [], previousScenes: [] }))).status).toBe(
+    200,
+  );
+  const body = JSON.parse(String(fetcher.mock.calls[0]![1]?.body)) as {
+    messages: Array<{ content: Array<{ type: string; text: string }> }>;
+  };
+  expect(body.messages[0]!.content.every((block) => block.type === 'text')).toBe(true);
+  expect(body.messages[0]!.content[0]!.text).toContain('physical distance');
 });

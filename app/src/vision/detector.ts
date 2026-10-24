@@ -37,6 +37,16 @@ export async function loadDetector(): Promise<VisionDetector> {
     detector.close();
     throw new Error('Frame downscaling unavailable');
   }
+  // Compile/warm the local inference path before replay starts. This blank canvas is
+  // never treated as a road observation; real detector timestamps start above zero.
+  canvas.width = INFERENCE_WIDTH;
+  canvas.height = Math.round((INFERENCE_WIDTH * 9) / 16);
+  try {
+    detector.detectForVideo(canvas, 0);
+  } catch (error: unknown) {
+    detector.close();
+    throw error;
+  }
   return {
     detect(video, timestampMs) {
       const vw = video.videoWidth;

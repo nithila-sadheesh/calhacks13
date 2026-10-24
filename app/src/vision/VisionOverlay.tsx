@@ -4,8 +4,10 @@ import type { PanelProps } from '../../../shared/types.ts';
 import { coachingStore } from './coachingStore.ts';
 const LABELS = {
   idle: 'Video coach ready. Play the recording to begin.',
+  loadingCv: 'Loading local object detector…',
+  watching: 'Local CV is watching. Claude responds to scene changes.',
   collecting: 'Collecting recent video frames…',
-  analyzing: 'Analyzing the video with Claude…',
+  analyzing: 'Local CV is watching · Claude is selecting coaching…',
   ready: 'Video analysis complete',
   error: 'Video analysis unavailable',
 };
@@ -15,10 +17,32 @@ export function VisionOverlay({ ctx }: PanelProps) {
   const snapshot = useSyncExternalStore(coachingStore.subscribe, coachingStore.get);
   return (
     <div className="overlay">
+      {snapshot.cvTracks?.map((track) => (
+        <div
+          key={track.id}
+          className="cv-box"
+          style={{
+            left: `${track.box.x * 100}%`,
+            top: `${track.box.y * 100}%`,
+            width: `${track.box.w * 100}%`,
+            height: `${track.box.h * 100}%`,
+          }}
+        >
+          <span>
+            {track.cls} {Math.round(track.score * 100)}%
+          </span>
+        </div>
+      ))}
       <div className="overlay-note" role="status">
         <strong>
           {simulated?.id.startsWith('mock-') ? 'Simulated video coaching' : LABELS[snapshot.status]}
         </strong>
+        {snapshot.cvScene && (
+          <p>
+            Local CV: {snapshot.cvScene.objects.length} stable objects · {snapshot.cvFrames} frames
+            processed · {Math.round(snapshot.cvLatencyMs ?? 0)} ms/frame
+          </p>
+        )}
         {(snapshot.message ?? simulated?.text) && <p>{snapshot.message ?? simulated?.text}</p>}
         {snapshot.reason && <p>{snapshot.reason}</p>}
         {snapshot.observations && (

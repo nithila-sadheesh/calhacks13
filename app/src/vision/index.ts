@@ -2,22 +2,23 @@ import type { AppModule, ModuleContext } from '../../../shared/types.ts';
 import {
   adviceKey,
   parseCoachingResponse,
+  SCENE_MEMORY_MS,
   type CoachingRequest,
   type CoachingResponse,
-  type VideoFrame,
   type SceneMemory,
-  SCENE_MEMORY_MS,
 } from '../../../shared/coaching.ts';
-import { rememberScene, selectCoachingFrames } from './sceneMemory.ts';
-import { createFrameCapture } from './capture.ts';
+import type { CvScene } from '../../../shared/cvScene.ts';
+import { loadDetector, type VisionDetector } from './detector.ts';
+import { createTracker, type Track } from './tracker.ts';
+import { createSceneBuilder, sceneKey } from './cvScene.ts';
+import { rememberScene } from './sceneMemory.ts';
 import { coachingStore } from './coachingStore.ts';
 
-export const SAMPLE_MS = 1000;
-export const INITIAL_SAMPLE_MS = 250;
+export const CV_INTERVAL_MS = 125;
 export const ANALYSIS_INTERVAL_MS = 3000;
-export const ADVICE_TTL_MS = 10_000;
+export const SCENE_REFRESH_MS = 5000;
 export const MAX_RESPONSE_AGE_MS = 8000;
-export const DUPLICATE_WINDOW_MS = 20_000;
+export const ADVICE_TTL_MS = 10000;
 
 async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<CoachingResponse> {
   const response = await fetch('/api/vision-advice', {
@@ -26,21 +27,20 @@ async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<Coa
     body: JSON.stringify(input),
     signal,
   });
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(
       response.status === 503
-        ? 'Anthropic key is not configured. Restart the dev server after setting it.'
-        : `Video analysis unavailable (HTTP ${response.status}).`,
+        ? 'Anthropic key is not configured. Restart the server after setting it.'
+        : `Coaching unavailable (HTTP ${response.status}).`,
     );
-  }
   const result = parseCoachingResponse(await response.json());
-  if (!result) throw new Error('Video analysis returned an invalid coaching response.');
+  if (!result) throw new Error('Coaching response was invalid.');
   return result;
 }
 
 export function createVisionModule(
   options: {
-    capture?: (video: HTMLVideoElement, tripMs: number) => VideoFrame | undefined;
+    loadDetector?: () => Promise<VisionDetector>;
     analyze?: (input: CoachingRequest, signal: AbortSignal) => Promise<CoachingResponse>;
   } = {},
 ): AppModule {
@@ -50,27 +50,43 @@ export function createVisionModule(
     name: 'vision',
     async start(ctx: ModuleContext) {
       cleanup?.();
-      const capture = options.capture ?? createFrameCapture();
-      const request = options.analyze ?? analyze;
-      let frames: VideoFrame[] = [];
-      let sceneMemory: SceneMemory[] = [];
-      let lastSample: number | undefined;
-      let lastRequest = -Infinity;
-      let controller: AbortController | undefined;
-      let version = 0;
+      const tracker = createTracker();
+      const builder = createSceneBuilder();
+      let detector: VisionDetector | undefined;
+      let loadFailed = false;
       let stopped = false;
-      const recent = new Map<string, { message: string; tripMs: number }>();
-      coachingStore.reset();
+      let version = 0;
+      let detectorMs = 0;
+      let lastTripMs: number | undefined;
+      let lastRequestMs = -Infinity;
+      let lastSentKey: string | undefined;
+      let controller: AbortController | undefined;
+      let sceneMemory: SceneMemory[] = [];
+      let previousScenes: CvScene[] = [];
+      const recent = new Map<string, number>();
+      let framesProcessed = 0;
+      coachingStore.set({ status: 'loadingCv' });
       const reset = () => {
         version++;
         controller?.abort();
         controller = undefined;
-        frames = [];
+        tracker.reset();
+        builder.reset();
         sceneMemory = [];
-        lastSample = undefined;
-        lastRequest = -Infinity;
+        previousScenes = [];
         recent.clear();
-        coachingStore.reset();
+        lastTripMs = undefined;
+        lastRequestMs = -Infinity;
+        lastSentKey = undefined;
+        framesProcessed = 0;
+        if (!stopped)
+          coachingStore.set({
+            status: detector ? 'watching' : loadFailed ? 'error' : 'loadingCv',
+            error: loadFailed
+              ? 'Local object detector is unavailable. Reload to retry.'
+              : undefined,
+            cvScene: undefined,
+          });
       };
       const off = [
         ctx.bus.on('tripReset', reset),
@@ -78,56 +94,105 @@ export function createVisionModule(
           if (state !== 'playing') reset();
         }),
       ];
+      const timer: { current?: ReturnType<typeof setInterval> } = {};
+      cleanup = () => {
+        stopped = true;
+        reset();
+        if (timer.current) clearInterval(timer.current);
+        off.forEach((dispose) => dispose());
+        detector?.close();
+        detector = undefined;
+        coachingStore.reset();
+      };
+      try {
+        detector = await (options.loadDetector ?? loadDetector)();
+      } catch {
+        loadFailed = true;
+        if (!stopped)
+          coachingStore.set({
+            status: 'error',
+            error: 'Local object detector could not load. Check local model assets and reload.',
+          });
+        return;
+      }
+      if (stopped) {
+        detector.close();
+        detector = undefined;
+        return;
+      }
+      coachingStore.set({ status: 'watching' });
       const tick = () => {
-        if (stopped || ctx.video.paused || ctx.video.ended) return;
+        if (
+          stopped ||
+          !detector ||
+          ctx.video.paused ||
+          ctx.video.ended ||
+          ctx.video.readyState < 2 ||
+          !ctx.video.videoWidth
+        )
+          return;
         const tripMs = ctx.clock.nowMs();
-        const interval = frames.length < 2 ? INITIAL_SAMPLE_MS : SAMPLE_MS;
-        if (lastSample !== undefined && tripMs - lastSample < interval) return;
-        let frame: VideoFrame | undefined;
+        if (lastTripMs === tripMs) return;
+        lastTripMs = tripMs;
+        detectorMs += CV_INTERVAL_MS;
+        const began = performance.now();
+        let scene: CvScene;
+        let tracks: Track[];
         try {
-          frame = capture(ctx.video, tripMs);
+          tracks = tracker.update(detector.detect(ctx.video, detectorMs));
+          scene = builder.update(tracks, tripMs);
         } catch {
-          coachingStore.set({ status: 'error', error: 'Could not read the current video frame.' });
+          coachingStore.set({
+            ...coachingStore.get(),
+            status: 'error',
+            error: 'Local detection failed on this frame.',
+          });
           return;
         }
-        if (!frame) {
-          coachingStore.set({ status: 'error', error: 'Waiting for playable video frames.' });
+        framesProcessed++;
+        coachingStore.set({
+          ...coachingStore.get(),
+          cvScene: scene,
+          cvTracks: tracks.filter((track) =>
+            scene.objects.some((object) => object.id === track.id),
+          ),
+          cvFrames: framesProcessed,
+          cvLatencyMs: performance.now() - began,
+        });
+        const key = sceneKey(scene);
+        if (
+          !scene.objects.length ||
+          controller ||
+          tripMs - lastRequestMs < ANALYSIS_INTERVAL_MS ||
+          (key === lastSentKey && tripMs - lastRequestMs < SCENE_REFRESH_MS)
+        )
           return;
-        }
-        lastSample = tripMs;
-        frames = [
-          ...frames.filter((previous) => tripMs - previous.tripMs <= SCENE_MEMORY_MS),
-          frame,
-        ].slice(-21);
-        if (controller || frames.length < 2 || tripMs - lastRequest < ANALYSIS_INTERVAL_MS) {
-          if (!controller)
-            coachingStore.set({
-              ...coachingStore.get(),
-              status: frames.length < 2 ? 'collecting' : coachingStore.get().status,
-            });
-          return;
-        }
-        const batch = selectCoachingFrames(frames);
-        sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
         const mine = version;
         const abort = new AbortController();
         controller = abort;
-        lastRequest = tripMs;
+        lastRequestMs = tripMs;
+        lastSentKey = key;
+        sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
+        previousScenes = previousScenes.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
+        for (const [text, time] of recent) if (tripMs - time > 20000) recent.delete(text);
+        const input: CoachingRequest = {
+          scene,
+          previousScenes: previousScenes.slice(-3),
+          sceneMemory,
+          recentAdvice: [...recent.keys()].slice(-3),
+        };
+        previousScenes = [...previousScenes, scene].slice(-3);
         const started = performance.now();
         coachingStore.set({ ...coachingStore.get(), status: 'analyzing', error: undefined });
-        for (const [key, value] of recent)
-          if (tripMs - value.tripMs >= DUPLICATE_WINDOW_MS) recent.delete(key);
-        const input = {
-          frames: batch,
-          sceneMemory,
-          recentAdvice: [...recent.values()].slice(-3).map((value) => value.message),
-        };
         ctx.bus.emit('dataSent', {
           destination: 'anthropic-vision',
-          summary: `${batch.length} resized video frames submitted for coaching; no GPS or microphone audio.`,
           tripMs,
+          summary: `Local CV scene with ${scene.objects.length} tracked objects submitted to Claude; no images, GPS or audio.`,
         });
-        void request(input, AbortSignal.any([abort.signal, AbortSignal.timeout(13_000)]))
+        void (options.analyze ?? analyze)(
+          input,
+          AbortSignal.any([abort.signal, AbortSignal.timeout(13000)]),
+        )
           .then((raw) => {
             if (
               stopped ||
@@ -140,33 +205,39 @@ export function createVisionModule(
             const now = ctx.clock.nowMs();
             if (now - tripMs > MAX_RESPONSE_AGE_MS) {
               coachingStore.set({
-                status: 'collecting',
-                reason: 'Previous analysis arrived too late; waiting for a fresh scene.',
+                ...coachingStore.get(),
+                status: 'watching',
+                reason: 'Previous coaching arrived too late; monitoring the current scene.',
               });
               return;
             }
             const result = parseCoachingResponse(raw);
-            if (!result) throw new Error('Video analysis returned an invalid coaching response.');
+            if (!result) throw new Error('Coaching response was invalid.');
             sceneMemory = rememberScene(sceneMemory, result, tripMs);
             if (result.sceneChanged) {
-              frames = frames.filter((previous) => previous.tripMs >= tripMs);
+              previousScenes = [];
               recent.clear();
             }
             coachingStore.set({
+              ...coachingStore.get(),
               status: 'ready',
+              message: result.shouldSpeak ? result.message : undefined,
+              reason: result.reason,
               observations: result.observations,
               uncertainties: result.uncertainties,
               coachingPoint: result.coachingPoint,
-              memoryEntries: sceneMemory.length,
-              message: result.shouldSpeak ? result.message : undefined,
-              reason: result.reason,
-              latencyMs: performance.now() - started,
               frameTripMs: tripMs,
+              latencyMs: performance.now() - started,
             });
             if (!result.shouldSpeak) return;
-            const key = adviceKey(result.message);
-            if (recent.has(key)) return;
-            recent.set(key, { message: result.message, tripMs: now });
+            const normalized = adviceKey(result.message);
+            if (
+              [...recent].some(
+                ([text, time]) => adviceKey(text) === normalized && now - time < 20000,
+              )
+            )
+              return;
+            recent.set(result.message, now);
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,
               text: result.message,
@@ -178,21 +249,16 @@ export function createVisionModule(
           .catch((error: unknown) => {
             if (!stopped && version === mine && !abort.signal.aborted)
               coachingStore.set({
+                ...coachingStore.get(),
                 status: 'error',
-                error: error instanceof Error ? error.message : 'Video analysis unavailable.',
+                error: error instanceof Error ? error.message : 'Coaching unavailable.',
               });
           })
           .finally(() => {
             if (controller === abort) controller = undefined;
           });
       };
-      const timer = setInterval(tick, 100);
-      cleanup = () => {
-        stopped = true;
-        reset();
-        clearInterval(timer);
-        off.forEach((dispose) => dispose());
-      };
+      timer.current = setInterval(tick, CV_INTERVAL_MS);
     },
     stop() {
       cleanup?.();

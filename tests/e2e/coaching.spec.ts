@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-test('video frames generate coaching through the real arbiter and speech events', async ({
+test('local CV generates image-free coaching through the real arbiter and speech events', async ({
   page,
 }) => {
-  const batches: Array<{ frames: Array<{ tripMs: number; jpeg: string }> }> = [];
+  const batches: Array<{ scene: { tripMs: number; objects: unknown[] }; frames?: unknown }> = [];
   await page.route('**/api/vision-advice', async (route) => {
     batches.push(route.request().postDataJSON());
     await route.fulfill({
@@ -34,18 +34,14 @@ test('video frames generate coaching through the real arbiter and speech events'
   await expect(page.locator('.coaching-evidence')).toContainText(
     'Its intended movement is unknown.',
   );
-  expect(batches[0]?.frames.length).toBeGreaterThanOrEqual(2);
-  expect(batches[0]?.frames[0]?.jpeg.startsWith('/9j/')).toBe(true);
+  expect(batches[0]?.scene.objects.length).toBeGreaterThan(0);
+  expect(batches[0]?.frames).toBeUndefined();
   await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Video coaching');
-  await expect(page.getByRole('region', { name: 'Data use' })).toContainText(
-    'resized video frames',
-  );
+  await expect(page.getByRole('region', { name: 'Data use' })).toContainText('Local CV scene');
   await expect(page.getByRole('region', { name: 'Timeline' })).toContainText(
     'map shown for context only',
   );
-  await expect(page.locator('.overlay')).toContainText('No new useful observation.', {
-    timeout: 7000,
-  });
+  await expect(page.locator('video')).toHaveJSProperty('ended', true, { timeout: 15000 });
   await expect(page.locator('.overlay')).not.toContainText(
     'Watch for cyclists beside parked cars.',
   );

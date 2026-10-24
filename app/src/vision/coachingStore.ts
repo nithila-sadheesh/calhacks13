@@ -1,9 +1,15 @@
+import type { CvScene } from '../../../shared/cvScene.ts';
+import type { Track } from './tracker.ts';
 export type CoachingSnapshot = {
+  cvScene?: CvScene;
+  cvTracks?: Track[];
+  cvFrames?: number;
+  cvLatencyMs?: number;
   observations?: string[];
   uncertainties?: string[];
   coachingPoint?: string;
   memoryEntries?: number;
-  status: 'idle' | 'collecting' | 'analyzing' | 'ready' | 'error';
+  status: 'loadingCv' | 'watching' | 'idle' | 'collecting' | 'analyzing' | 'ready' | 'error';
   message?: string;
   reason?: string;
   error?: string;

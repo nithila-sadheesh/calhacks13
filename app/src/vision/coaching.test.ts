@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createBus } from '../../../shared/bus.ts';
 import type { ModuleContext, VisionAdvice } from '../../../shared/types.ts';
 import type { CoachingResponse } from '../../../shared/coaching.ts';
-import { createVisionModule } from './index.ts';
+import { createFrameVisionModule as createVisionModule } from './frameRuntime.ts';
 import { coachingStore } from './coachingStore.ts';
 afterEach(() => {
   vi.useRealTimers();
