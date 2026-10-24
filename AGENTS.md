@@ -16,7 +16,7 @@ Before your first edit, confirm which person you are working for. If you don't k
 | --- | --- | --- |
 | Jeev | Route, map cues, drive fixtures | `app/src/map/`, `scripts/route/`, `scripts/track/`, `fixtures/demo-drive/route.json`, `features.json`, `track.json`, `annotations.json` |
 | Tejas | Vision and overlay | `app/src/vision/` |
-| Nithila | Cartesia voice, server, deploy | `app/src/voice/`, `server/`, `api/` (one-line re-exports of `server/` handlers for Vercel), `scripts/voice/`, `fixtures/audio/`, `vercel.json` |
+| Nithila | Cartesia voice, server, deploy | `app/src/voice/`, `server/`, `api/`, `scripts/voice/`, `fixtures/audio/`, `vercel.json` |
 | Rohit | Replay clock, arbiter, app shell, integration | `shared/`, `app/src/replay/`, `app/src/arbiter/`, `app/src/ui/`, `app/src/main.tsx`, `package.json`, lockfile, root config files, `tests/e2e/`, `.gitignore`, `.env.example` |
 
 Shared by nobody: `fixtures/demo-drive/video.mp4` (team recording; Rohit commits it via Git LFS), `docs/` (edit only when your human asks).
@@ -41,7 +41,7 @@ Shared by nobody: `fixtures/demo-drive/video.mp4` (team recording; Rohit commits
 - Node 22.6+, npm. Vite + React 19 + TypeScript (strict). Vitest for unit tests, Playwright (installed Chrome) for end-to-end tests. ESLint + Prettier with repo defaults.
 - `npm run dev`: local dev server. Camera and mic need HTTPS on phones; use the Vercel preview URL or a tunnel for phone testing.
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`.
-- `/api/<name>` in dev runs the `GET` (etc.) handler exported from `server/<name>.ts`, with `.env` loaded. On Vercel the same handler is served from `api/<name>.ts`.
+- `/api/<name>` in dev runs the `GET` (etc.) handler exported from `server/<name>.ts`, with `.env` loaded. Nithila’s implemented token handler lives in `api/cartesia-token.ts`; aligning dev routing with it is pending integration work.
 - Mocks: add `?mock=map,vision,voice,arbiter` (any subset) to the dev URL to replace those modules with their mocks.
 - Vision: MediaPipe Tasks Vision object detector (EfficientDet-Lite0). Voice: Cartesia Sonic (TTS WebSocket) and Ink-2 (STT). Map data: OSRM and Overpass, fetched by scripts into fixtures; the app never calls them at runtime.
 

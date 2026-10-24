@@ -1,4 +1,19 @@
-// Nithila's clip script (STUB). Run once: `npm run clips`. Will generate the bundled alert and
-// fallback clips with Cartesia Sonic (approved phrases only, AGENTS.md section 8) into
-// fixtures/audio/ and write fixtures/audio/manifest.json. Reads CARTESIA_API_KEY from .env.
-console.log('generateClips: not implemented');
+// Run from repo root with `npm run clips` (loads the git-ignored .env).
+import { fileURLToPath } from 'node:url';
+import { generateClipSet } from './clipGeneration.ts';
+import { loadLocalKey } from './localKey.ts';
+const key = await loadLocalKey();
+try {
+  await generateClipSet({
+    key,
+    directory: fileURLToPath(new URL('../../fixtures/audio/', import.meta.url)),
+    report: (message) => console.log(message),
+  });
+} catch (error: unknown) {
+  const message =
+    error instanceof Error && /^Cartesia rejected |^Invalid PCM response /.test(error.message)
+      ? error.message
+      : 'Clip generation could not reach Cartesia or write the files. Existing manifest was preserved.';
+  console.error(message);
+  process.exitCode = 1;
+}

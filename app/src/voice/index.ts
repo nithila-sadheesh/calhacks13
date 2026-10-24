@@ -1,14 +1,105 @@
-// Nithila's voice module (STUB). Will play `speak` requests through Cartesia Sonic (streamed) or
-// bundled clips, interrupt locally on priority 0, and run Ink push-to-talk.
-// Publishes: speechStarted, speechEnded, voiceCommand, dataSent.
-// See docs/DESIGN.md, "Nithila: Cartesia voice, server and deploy".
 import { log } from '../../../shared/log.ts';
-import type { AppModule } from '../../../shared/types.ts';
+import type { AppModule, ModuleContext } from '../../../shared/types.ts';
+import { createPushToTalk, type MicStatus } from './pushToTalk.ts';
+import { loadClips } from './clips.ts';
+import { createVoiceEngine } from './engine.ts';
+import { createAudioPlayer, type AudioPlayer } from './player.ts';
+import { createSonicTransport } from './sonic.ts';
 
-export const voiceModule: AppModule = {
-  name: 'voice',
-  async start() {
-    log('voice', 'started');
-  },
-  stop() {},
-};
+export function createVoiceModule(): AppModule & {
+  enableAudio(): Promise<void>;
+  pressToTalk(): Promise<void>;
+  releaseToTalk(): void;
+  cancelTalk(): void;
+  micStatus(): MicStatus;
+  onMicStatus(listener: () => void): () => void;
+} {
+  let mic: ReturnType<typeof createPushToTalk> | undefined;
+  let micStatus: MicStatus = 'idle';
+  const micListeners = new Set<() => void>();
+  const updateMic = (status: MicStatus) => {
+    micStatus = status;
+    micListeners.forEach((listener) => listener());
+  };
+  let engine: ReturnType<typeof createVoiceEngine> | undefined;
+  let player: AudioPlayer | undefined;
+  let controller: AbortController | undefined;
+  let off: Array<() => void> = [];
+  let version = 0;
+  function stop() {
+    version++;
+    mic?.cancel();
+    mic = undefined;
+    controller?.abort();
+    off.forEach((dispose) => dispose());
+    off = [];
+    if (engine) engine.stop();
+    else player?.close();
+    engine = undefined;
+    player = undefined;
+  }
+  return {
+    name: 'voice',
+    async start(ctx: ModuleContext) {
+      stop();
+      const mine = version;
+      controller = new AbortController();
+      const clips = await loadClips(
+        AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+      ).catch(() => new Map());
+      if (mine !== version) return;
+      player = createAudioPlayer();
+      engine = createVoiceEngine({
+        bus: ctx.bus,
+        clock: ctx.clock,
+        player,
+        clips,
+        transport: (receive, disconnect) =>
+          createSonicTransport(receive, disconnect, (text) =>
+            ctx.bus.emit('dataSent', {
+              destination: 'cartesia-tts',
+              summary: `text: "${text}"`,
+              tripMs: ctx.clock.nowMs(),
+            }),
+          ),
+      });
+      mic = createPushToTalk({ bus: ctx.bus, clock: ctx.clock, status: updateMic });
+      off = [
+        ctx.bus.on('speak', (request) => engine?.speak(request)),
+        ctx.bus.on('tripReset', () => {
+          engine?.reset();
+          mic?.cancel();
+        }),
+        ctx.bus.on('tripState', ({ state }) => {
+          if (state === 'paused' || state === 'ended') {
+            engine?.reset();
+            mic?.cancel();
+          }
+        }),
+      ];
+      log('voice', 'ready', { clipsLoaded: clips.size });
+    },
+    async enableAudio() {
+      if (!player) throw new Error('Voice is still loading.');
+      await player.enable();
+    },
+    async pressToTalk() {
+      if (mic) await mic.press();
+    },
+    releaseToTalk() {
+      mic?.release();
+    },
+    cancelTalk() {
+      mic?.cancel();
+    },
+    micStatus: () => micStatus,
+    onMicStatus(listener) {
+      micListeners.add(listener);
+      return () => {
+        micListeners.delete(listener);
+      };
+    },
+    stop,
+  };
+}
+export const voiceModule = createVoiceModule();

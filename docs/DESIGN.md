@@ -51,7 +51,7 @@ Each person owns a set of folders outright. Nobody edits another person's folder
 | --- | --- | --- | --- | --- |
 | **Jeev** | Route, map cues, drive fixtures | `app/src/map/`, `scripts/route/`, `scripts/track/`, `fixtures/demo-drive/{route,features,track,annotations}.json` | Route features from OSRM and OpenStreetMap; GPX to `track.json`; route progress; 2–3 timed, safe reminders; Upcoming panel | Replay clock, audio, video, UI layout |
 | **Tejas** | Vision and overlay | `app/src/vision/` | Detector on video frames; tracker; pedestrian alert (following-distance fallback); camera-health status; overlay; holdout-clip report | Video element and clock, arbiter, audio |
-| **Nithila** | Cartesia voice, server, deploy | `app/src/voice/`, `server/`, `scripts/voice/`, `fixtures/audio/`, Vercel config | Token endpoint; Sonic streaming and playback; local interruption; Sonic-made alert clips; Ink push-to-talk; latency badge; `dataSent` events; deployment | Route logic, vision, UI layout |
+| **Nithila** | Cartesia voice, server, deploy | `app/src/voice/`, `api/`, `scripts/voice/`, `fixtures/audio/`, Vercel config | Token endpoint; Sonic streaming and playback; local interruption; Sonic-made alert clips; Ink push-to-talk; latency badge; `dataSent` events; deployment | Route logic, vision, UI layout |
 | **Rohit** | Replay clock, arbiter, app shell, integration | `shared/`, `app/src/replay/`, `app/src/arbiter/`, `app/src/ui/`, `app/src/main.tsx`, `package.json`, root config, `tests/e2e/` | Event bus and types; video master clock with pause/seek reset; arbiter; layout with panel slots; captions, timeline, data-use panel, supervisor check; smoke tests; demo run | Inside any other module's folder |
 
 **How the UI stays conflict-free.** Rohit's layout has fixed slots. Each owner exports one React component, and Rohit mounts it without editing it:
@@ -94,7 +94,7 @@ app/src/
   vision/           Tejas
   voice/            Nithila
 shared/             Rohit: types.ts, bus.ts, mocks/
-server/             Nithila: Cartesia token endpoint
+api/                Nithila: Vercel Cartesia token endpoint
 scripts/route/      Jeev: fetch OSRM + Overpass, write fixtures
 scripts/track/      Jeev: GPX to track.json
 scripts/voice/      Nithila: generate alert clips with Sonic
@@ -282,7 +282,7 @@ Nithila owns every sound the app makes, everything it hears, and the server. Thi
 ### Tasks, in order
 
 1. **Spike first (Checkpoint 0).** A bare test page that makes one Sonic WebSocket call and one Ink call. Confirm against the docs: current model ids (Sonic-3.6 was the newest we found), `Cartesia-Version`, token grants, output encoding, and the STT WebSocket URL and parameters. Write what worked into `app/src/voice/NOTES.md`.
-2. **Token endpoint** (`server/`, a Vercel function). `GET /api/cartesia-token` calls `POST https://api.cartesia.ai/access-token` with the server-side key and returns a short-lived token with `tts` and `stt` grants. Basic rate limit. The key lives only in Vercel environment variables and a git-ignored `.env`.
+2. **Token endpoint** (`api/cartesia-token.ts`, a Vercel function owned by Nithila). `GET /api/cartesia-token` calls `POST https://api.cartesia.ai/access-token` with the server-side key and returns a short-lived token with `tts` and `stt` grants. Basic rate limit. The key lives only in Vercel environment variables and a git-ignored `.env`.
 3. **Sonic streaming.** One WebSocket per session, reconnect on drop. Per request: `model_id`, voice id, full-sentence `transcript`, `context_id` = request id, `continue: false`, `max_buffer_delay_ms: 0`, raw PCM output, calm emotion. Decode chunks and schedule them back to back with Web Audio.
 4. **Real interruption.** On a priority-0 request: stop every scheduled `AudioBufferSourceNode` for the current request, clear its queue, mark its id so late chunks are discarded, send the Cartesia cancel message, then play the clip. Emit `speechEnded { interrupted: true }` for the old request.
 5. **Alert clips** (`scripts/voice/`). Generate with the same Sonic voice and commit to `fixtures/audio/` with `manifest.json`: “Pedestrian ahead. Stay alert.”, “Leave more space ahead.”, “Camera paused. Route reminders only.”, plus fallbacks “Turn ahead.”, “Stop sign ahead.”, “Crosswalk ahead.” Preload them into memory at startup.

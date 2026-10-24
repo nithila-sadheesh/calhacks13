@@ -1,18 +1,18 @@
 # Known gaps and things to know
 
-Current state (branch `rohit/shell`). `typecheck`, `lint`, `test` (unit) and `e2e` (Playwright in Chrome) pass. Rohit's slice is built: replay clock, arbiter, drive layout, captions, timeline, data-use panel and setup screen, all checked in Chrome with the map, vision and voice mocks. Read this before starting your module.
+Current state: Rohit’s shell and Nithila’s voice implementation are combined on `integration`. Branch-level verification is recorded in the owner notes; combined checks and live Chrome acceptance must be rerun. Map and vision remain stubs.
 
 ## Missing pieces
 
 | Gap | Owner | Notes |
 | --- | --- | --- |
 | Real drive video not recorded yet | whole team (records), Rohit (commits) | `fixtures/demo-drive/video.mp4` is a 60 s H.264 test pattern with an on-screen seconds counter, committed through Git LFS. It has no pedestrians or road features, so only mocks produce events on it. Replace it with the real drive at the end and re-run `npm run e2e` and `tests/e2e/smoke.md`. |
-| Token endpoint not wired for Vercel | Nithila | Decided: add `api/cartesia-token.ts` containing `export { GET } from '../server/cartesia-token.ts';`. `api/` is now Nithila's (AGENTS.md). In dev, `/api/cartesia-token` already runs `server/cartesia-token.ts` with `.env` loaded (Vite middleware in `vite.config.ts`, GET-style requests without a body). The handler is still a 501 stub. |
-| Real modules are stubs | Jeev, Tejas, Nithila | `map`, `vision` and `voice` only log on start. The arbiter is real. With no `?mock=`, nothing is emitted, so nothing is spoken. |
-| Fixtures are placeholders | Jeev | `track.json`, `features.json` and `route.json` hold a 10-second straight line and one made-up stop sign (`source: 'curated'`). `annotations.json` and `fixtures/audio/manifest.json` are empty. |
+| Token endpoint dev routing differs | Rohit, Nithila | The implemented handler is `api/cartesia-token.ts`. Vite still loads the legacy `server/cartesia-token.ts` 501 stub. Align dev routing before testing streaming through `npm run dev`. Vercel deployment remains unverified. |
+| Map and vision remain stubs | Jeev, Tejas | Voice and arbiter are implemented. Real route cues and frame-based alerts await their owners; use explicit map/vision mocks for integration testing. |
+| Drive fixtures are placeholders | Jeev | Track, route and features are sample data. Six generated PCM clips and a populated audio manifest are supplied by Nithila. |
 | Turn cues may not need a `Route` change | Jeev | `features.json` already supports `turnLeft`/`turnRight` with `street` and `routeDistM`. Confirm before asking for a `Route` contract change. |
-| Clip keys must match the arbiter | Nithila, Tejas | The arbiter uses `cameraPaused` (the "Camera paused" clip) and sets `fallbackClipKey` to `fallbackTurn`, `fallbackStopSign` or `fallbackCrosswalk`. Vision should use `pedestrian` and `followingDistance` (the vision mock already uses `pedestrian`). `manifest.json` must use these keys. Traffic lights have no fallback clip. |
-| Voice behaviour on mute and pause | Nithila | The arbiter lets the line already playing finish on `mute`, and starts nothing new while `tripState` is not `playing`. It has no event to stop a line; only a priority-0 `speak` cuts audio. Voice decides whether to stop its current line on `voiceCommand: mute` or `tripState: paused`; either way it must emit `speechEnded` for it. |
+| Clip key alignment pending | Rohit, Nithila, Tejas | Voice ships `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. The vision mock uses `pedestrian`; arbiter fallback keys use `fallbackTurn`, `fallbackStopSign`, `fallbackCrosswalk`. Voice currently derives fallback keys from approved text and ignores `fallbackClipKey`. Align consumers before claiming integrated alert playback. |
+| Voice behavior on mute and pause | Rohit, Nithila | Arbiter lets the current line finish on mute. Voice resets audio and cancels microphone capture on pause/end/reset, emitting speechEnded for active playback. Verify the combined resume behavior in Chrome. |
 | Interrupted cues rarely get replayed | Jeev | The arbiter replays an interrupted cue once if it is still before `expiresMs` after the alert ends (about 2 s for the alert line, plus a 1 s gap). With the design's 3 s "drop after" windows, most interrupted cues expire first and the timeline shows "dropped: expired". If the demo should show a replay, cues need a longer `expiresMs`. |
 | No Spanish, stretch or live-camera work | team | Chosen at Checkpoint 2. |
 

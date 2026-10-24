@@ -1,1 +1,44 @@
-{}
+{
+  "pedestrianNearby": {
+    "file": "pedestrianNearby-a55aa33836da.pcm",
+    "text": "Pedestrian ahead. Stay alert.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  },
+  "followingDistance": {
+    "file": "followingDistance-c3354e3e7f7e.pcm",
+    "text": "Leave more space ahead.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  },
+  "cameraPaused": {
+    "file": "cameraPaused-42005312c99d.pcm",
+    "text": "Camera paused. Route reminders only.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  },
+  "turn": {
+    "file": "turn-b4c90d6db3a4.pcm",
+    "text": "Turn ahead.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  },
+  "stopSign": {
+    "file": "stopSign-29f6923c9af1.pcm",
+    "text": "Stop sign ahead.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  },
+  "crosswalk": {
+    "file": "crosswalk-6860228ff2ba.pcm",
+    "text": "Crosswalk ahead.",
+    "sampleRate": 24000,
+    "model": "sonic-3.6",
+    "voice": "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+  }
+}
