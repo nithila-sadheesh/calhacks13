@@ -1,4 +1,4 @@
-import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
+import { CARTESIA_VERSION, SAMPLE_RATE, SPEECH_SPEED, SONIC_MODEL, VOICE_ID } from './config.ts';
 import { VoiceSetupError } from './setupError.ts';
 import { decodePcm } from './pcm.ts';
 
@@ -137,7 +137,7 @@ export function createSonicTransport(
           voice: VOICE_ID,
           transcript: text,
           language: 'en',
-          generation_config: { emotion: 'calm' },
+          generation_config: { emotion: 'calm', speed: SPEECH_SPEED },
           context_id: id,
           continue: false,
           max_buffer_delay_ms: 0,

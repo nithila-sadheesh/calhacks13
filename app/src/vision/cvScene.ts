@@ -14,7 +14,8 @@ export function createSceneBuilder() {
       for (const [id, value] of history) if (tripMs - value.lastMs > 1000) history.delete(id);
       const objects: SceneObject[] = [];
       for (const track of tracks) {
-        if (track.score < 0.45) continue;
+        if (track.score < (track.cls === 'stop sign' || track.cls === 'traffic light' ? 0.4 : 0.45))
+          continue;
         let state = history.get(track.id);
         if (!state) {
           state = { firstMs: tripMs, lastMs: tripMs, count: 0, samples: [] };
@@ -35,6 +36,12 @@ export function createSceneBuilder() {
         const dx = centerX - (old.box.x + old.box.w / 2);
         const ratio = (track.box.w * track.box.h) / Math.max(0.0001, old.box.w * old.box.h);
         objects.push({
+          imageBox: {
+            x: Math.max(0, track.box.x),
+            y: Math.max(0, track.box.y),
+            w: Math.min(track.box.w, 1 - Math.max(0, track.box.x)),
+            h: Math.min(track.box.h, 1 - Math.max(0, track.box.y)),
+          },
           id: track.id,
           class: track.cls,
           confidence: Math.round(track.score * 100) / 100,

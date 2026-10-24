@@ -7,6 +7,9 @@ export const SCENE_CLASSES = [
   'motorcycle',
   'stop sign',
   'traffic light',
+  'dog',
+  'cat',
+  'train',
 ] as const;
 export type SceneClass = (typeof SCENE_CLASSES)[number];
 export type SceneObject = {
@@ -18,6 +21,7 @@ export type SceneObject = {
   imageMotion: 'leftward' | 'rightward' | 'stable' | 'unknown';
   apparentSize: 'growing' | 'shrinking' | 'stable' | 'unknown';
   visibleForMs: number;
+  imageBox?: { x: number; y: number; w: number; h: number };
 };
 export type CvScene = { tripMs: number; objects: SceneObject[] };
 const oneOf = <T extends string>(value: unknown, choices: readonly T[]): value is T =>
@@ -57,7 +61,27 @@ export function parseCvScene(value: unknown): CvScene | undefined {
       item.visibleForMs > 3_600_000
     )
       return;
+    let imageBox: SceneObject['imageBox'];
+    if (item.imageBox !== undefined) {
+      if (!item.imageBox || typeof item.imageBox !== 'object') return;
+      const box = item.imageBox as Record<string, unknown>;
+      if (
+        ![box.x, box.y, box.w, box.h].every(
+          (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1,
+        )
+      )
+        return;
+      imageBox = { x: box.x as number, y: box.y as number, w: box.w as number, h: box.h as number };
+      if (
+        imageBox.w <= 0 ||
+        imageBox.h <= 0 ||
+        imageBox.x + imageBox.w > 1.001 ||
+        imageBox.y + imageBox.h > 1.001
+      )
+        return;
+    }
     objects.push({
+      ...(imageBox ? { imageBox } : {}),
       id: item.id,
       class: item.class,
       confidence: item.confidence,

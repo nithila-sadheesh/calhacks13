@@ -64,6 +64,7 @@ describe('Sonic session transport', () => {
     expect(Socket.instances).toHaveLength(1);
     expect(s.fetcher).toHaveBeenCalledTimes(1);
     expect(socket.sent[0]).toMatchObject({
+      generation_config: { emotion: 'calm', speed: 1.15 },
       model_id: 'sonic-3.6',
       context_id: 'one',
       continue: false,

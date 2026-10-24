@@ -13,6 +13,7 @@ import {
   SCORE_THRESHOLD,
   type DetectorClass,
 } from './config.ts';
+import { iou } from './geometry.ts';
 import type { Detection } from './tracker.ts';
 
 const CLASS_SET: ReadonlySet<string> = new Set(DETECTOR_CLASSES);
@@ -47,6 +48,8 @@ export async function loadDetector(): Promise<VisionDetector> {
     detector.close();
     throw error;
   }
+  let frame = 0;
+  let inferenceTimestamp = 0;
   return {
     detect(video, timestampMs) {
       const vw = video.videoWidth;
@@ -57,7 +60,21 @@ export async function loadDetector(): Promise<VisionDetector> {
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       context.drawImage(video, 0, 0, width, height);
-      return toDetections(detector.detectForVideo(canvas, timestampMs), width, height);
+      inferenceTimestamp = Math.max(timestampMs, inferenceTimestamp + 1);
+      const full = toDetections(detector.detectForVideo(canvas, inferenceTimestamp), width, height);
+      // Every fourth frame magnifies a different roadside region. Keep only sign/signal
+      // detections from this extra pass; full-frame inference still supplies road users.
+      if (++frame % 4 !== 0) return full;
+      const crop = { x: frame % 8 === 0 ? 0.5 : 0, y: 0, w: 0.5, h: 0.75 };
+      const cropHeight = Math.max(1, Math.round((crop.h * vh * width) / (crop.w * vw)));
+      canvas.height = cropHeight;
+      context.drawImage(video, crop.x * vw, 0, crop.w * vw, crop.h * vh, 0, 0, width, cropHeight);
+      const signs = toDetections(
+        detector.detectForVideo(canvas, ++inferenceTimestamp),
+        width,
+        cropHeight,
+      ).filter((item) => item.cls === 'stop sign' || item.cls === 'traffic light');
+      return mergeCropDetections(full, signs, crop);
     },
     close() {
       detector.close();
@@ -102,4 +119,26 @@ function toDetections(result: ObjectDetectorResult, vw: number, vh: number): Det
     });
   }
   return out;
+}
+
+export function mergeCropDetections(
+  full: Detection[],
+  cropped: Detection[],
+  crop: { x: number; y: number; w: number; h: number },
+): Detection[] {
+  const remapped = cropped.map((item) => ({
+    ...item,
+    box: {
+      x: crop.x + item.box.x * crop.w,
+      y: crop.y + item.box.y * crop.h,
+      w: item.box.w * crop.w,
+      h: item.box.h * crop.h,
+    },
+  }));
+  const kept: Detection[] = [];
+  for (const item of [...full, ...remapped].sort((a, b) => b.score - a.score)) {
+    if (!kept.some((other) => other.cls === item.cls && iou(other.box, item.box) > 0.4))
+      kept.push(item);
+  }
+  return kept.slice(0, MAX_RESULTS);
 }

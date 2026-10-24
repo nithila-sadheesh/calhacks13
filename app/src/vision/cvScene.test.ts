@@ -36,3 +36,16 @@ it('ignores weak detections and ID/confidence churn in scene keys', () => {
     }),
   );
 });
+
+it('retains repeated lower-confidence signs and normalized geometry, but rejects weak cars', () => {
+  const builder = createSceneBuilder();
+  const sign = track({ cls: 'stop sign', score: 0.42 });
+  builder.update([sign], 0);
+  const scene = builder.update([sign], 125);
+  expect(scene.objects[0]).toMatchObject({
+    class: 'stop sign',
+    confidence: 0.42,
+    imageBox: sign.box,
+  });
+  expect(builder.update([track({ id: 2, score: 0.42 })], 250).objects).toEqual([]);
+});

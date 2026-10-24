@@ -14,3 +14,11 @@ Default production flow: local EfficientDet-Lite0 → IoU tracking → compact s
 Only basic object classes are supplied: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Signs/lights have no OCR/color/applicability interpretation. Image motion may be ego motion; growing boxes are not physical proximity. Track IDs and model memory cannot prove who arrived first. The prompt must not fill these gaps with handbook knowledge.
 
 See `docs/KNOWN_GAPS.md` for measured latency, current short-video limits and test status; `docs/COACHING_GUIDE.md` for the teaching library and uncertainty requirements. Holdout/instructor review remains pending.
+
+### Coaching sensitivity and perception update
+
+The coaching policy now permits specific preparatory cues from repeated detections without requiring a visible conflict. Duplicate advice remains suppressed. Signs/signals enter scene summaries at 0.40 confidence after repeated observations; other classes retain 0.45. Added COCO dog, cat and train labels, and increased detector candidates to 20 (scene payload still capped at 10). This is broader coverage, not a measured accuracy improvement.
+
+Every fourth inference adds one alternating left/right crop covering half the image width and the upper three quarters. Only sign/signal detections from crops are retained, mapped back to full-frame coordinates and deduplicated by same-class IoU. Crop calls use strictly increasing private model timestamps and preserve aspect ratio. This costs an extra inference on one quarter of frames. No additional model or dependency is downloaded.
+
+Scene objects optionally carry normalized imageBox x/y/w/h through the validated server contract. These support image-relative comparisons, not physical distance, road placement, collision prediction or signal interpretation. Existing callers without boxes remain compatible. Claude is prompted for one practical 8–12-word sentence with matching CV-only examples. Prompt targets are not a guarantee of recommendation quality; test against labeled road footage before drawing accuracy conclusions. Small signs, sign applicability, camera cuts and object identities remain limitations. Sonic streaming requests use speed guidance 1.15; bundled fallback audio is unchanged.
