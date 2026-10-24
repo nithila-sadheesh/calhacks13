@@ -66,6 +66,17 @@ export function VisionOverlay({ ctx }: PanelProps) {
             {snapshot.coachingPoint && <p>Teaching point: {snapshot.coachingPoint}</p>}
           </details>
         )}
+        {snapshot.diagnostics && snapshot.diagnostics.length > 0 && (
+          <details className="coaching-evidence">
+            <summary>Coaching request diagnostics ({snapshot.diagnostics.length})</summary>
+            <p>
+              Local record; retained after playback ends. Copy this JSON to diagnose missing advice.
+            </p>
+            <pre style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(snapshot.diagnostics, null, 2)}
+            </pre>
+          </details>
+        )}
         {snapshot.error && <p>{snapshot.error}</p>}
         {snapshot.latencyMs !== undefined && (
           <small>

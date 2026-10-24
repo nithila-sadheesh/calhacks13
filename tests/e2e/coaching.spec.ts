@@ -31,9 +31,9 @@ test('local CV generates image-free coaching through the real arbiter and speech
     timeout: 10000,
   });
   await page.getByText('What the coach observed', { exact: true }).click();
-  await expect(page.locator('.coaching-evidence')).toContainText(
-    'Its intended movement is unknown.',
-  );
+  await expect(
+    page.locator('.coaching-evidence').filter({ hasText: 'What the coach observed' }),
+  ).toContainText('Its intended movement is unknown.');
   expect(batches[0]?.scene.objects.length).toBeGreaterThan(0);
   expect(batches[0]?.frames).toBeUndefined();
   await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Video coaching');
@@ -42,9 +42,16 @@ test('local CV generates image-free coaching through the real arbiter and speech
     'map shown for context only',
   );
   await expect(page.locator('video')).toHaveJSProperty('ended', true, { timeout: 15000 });
-  await expect(page.locator('.overlay')).not.toContainText(
-    'Watch for cyclists beside parked cars.',
-  );
+  await page.getByText(/Coaching request diagnostics/).click();
+  const diagnostics = page
+    .locator('.coaching-evidence')
+    .filter({ hasText: 'Coaching request diagnostics' });
+  await expect(diagnostics).toContainText('Sent to arbiter (not confirmation of audio)');
+  await expect(diagnostics).toContainText('A cyclist is visible near parked vehicles.');
+  await expect(diagnostics).toContainText('confidence');
+  await expect(
+    page.locator('.overlay-note > p').filter({ hasText: 'Watch for cyclists beside parked cars.' }),
+  ).toHaveCount(0);
 });
 
 test('local analysis POST routing uses the server handler', async ({ request }) => {

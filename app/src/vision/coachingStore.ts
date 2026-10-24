@@ -1,6 +1,15 @@
 import type { CvScene } from '../../../shared/cvScene.ts';
 import type { Track } from './tracker.ts';
+export type CoachingDiagnostic = {
+  id: number;
+  tripMs: number;
+  objects: CvScene['objects'];
+  outcome: string;
+  latencyMs?: number;
+  response?: import('../../../shared/coaching.ts').CoachingResponse;
+};
 export type CoachingSnapshot = {
+  diagnostics?: CoachingDiagnostic[];
   cvScene?: CvScene;
   cvTracks?: Track[];
   cvFrames?: number;

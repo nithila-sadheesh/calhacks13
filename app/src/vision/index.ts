@@ -12,7 +12,7 @@ import { loadDetector, type VisionDetector } from './detector.ts';
 import { createTracker, type Track } from './tracker.ts';
 import { createSceneBuilder, sceneKey } from './cvScene.ts';
 import { rememberScene } from './sceneMemory.ts';
-import { coachingStore } from './coachingStore.ts';
+import { coachingStore, type CoachingDiagnostic } from './coachingStore.ts';
 
 export const CV_INTERVAL_MS = 125;
 export const ANALYSIS_INTERVAL_MS = 3000;
@@ -65,9 +65,23 @@ export function createVisionModule(
       let previousScenes: CvScene[] = [];
       const recent = new Map<string, number>();
       let framesProcessed = 0;
+      let requestSequence = 0;
+      const diagnostic = (id: number, changes: Partial<CoachingDiagnostic>) => {
+        const current = coachingStore.get();
+        coachingStore.set({
+          ...current,
+          diagnostics: current.diagnostics?.map((entry) =>
+            entry.id === id ? { ...entry, ...changes } : entry,
+          ),
+        });
+      };
       coachingStore.set({ status: 'loadingCv' });
       const reset = () => {
         version++;
+        const pending =
+          coachingStore.get().diagnostics?.filter((entry) => entry.outcome === 'Pending') ?? [];
+        for (const entry of pending)
+          diagnostic(entry.id, { outcome: 'Cancelled: playback paused, ended or reset' });
         controller?.abort();
         controller = undefined;
         tracker.reset();
@@ -86,10 +100,14 @@ export function createVisionModule(
               ? 'Local object detector is unavailable. Reload to retry.'
               : undefined,
             cvScene: undefined,
+            diagnostics: coachingStore.get().diagnostics,
           });
       };
       const off = [
-        ctx.bus.on('tripReset', reset),
+        ctx.bus.on('tripReset', () => {
+          reset();
+          coachingStore.set({ ...coachingStore.get(), diagnostics: [] });
+        }),
         ctx.bus.on('tripState', ({ state }) => {
           if (state !== 'playing') reset();
         }),
@@ -183,7 +201,21 @@ export function createVisionModule(
         };
         previousScenes = [...previousScenes, scene].slice(-3);
         const started = performance.now();
-        coachingStore.set({ ...coachingStore.get(), status: 'analyzing', error: undefined });
+        const requestId = ++requestSequence;
+        coachingStore.set({
+          ...coachingStore.get(),
+          status: 'analyzing',
+          error: undefined,
+          diagnostics: [
+            ...(coachingStore.get().diagnostics ?? []),
+            {
+              id: requestId,
+              tripMs,
+              objects: scene.objects,
+              outcome: 'Pending',
+            },
+          ].slice(-30),
+        });
         ctx.bus.emit('dataSent', {
           destination: 'anthropic-vision',
           tripMs,
@@ -194,6 +226,12 @@ export function createVisionModule(
           AbortSignal.any([abort.signal, AbortSignal.timeout(13000)]),
         )
           .then((raw) => {
+            const result = parseCoachingResponse(raw);
+            diagnostic(requestId, {
+              latencyMs: performance.now() - started,
+              ...(result ? { response: result } : {}),
+              outcome: 'Discarded: playback paused, ended or reset',
+            });
             if (
               stopped ||
               version !== mine ||
@@ -204,6 +242,7 @@ export function createVisionModule(
               return;
             const now = ctx.clock.nowMs();
             if (now - tripMs > MAX_RESPONSE_AGE_MS) {
+              diagnostic(requestId, { outcome: 'Discarded: response older than 8 seconds' });
               coachingStore.set({
                 ...coachingStore.get(),
                 status: 'watching',
@@ -211,7 +250,6 @@ export function createVisionModule(
               });
               return;
             }
-            const result = parseCoachingResponse(raw);
             if (!result) throw new Error('Coaching response was invalid.');
             sceneMemory = rememberScene(sceneMemory, result, tripMs);
             if (result.sceneChanged) {
@@ -229,14 +267,20 @@ export function createVisionModule(
               frameTripMs: tripMs,
               latencyMs: performance.now() - started,
             });
-            if (!result.shouldSpeak) return;
+            if (!result.shouldSpeak) {
+              diagnostic(requestId, { outcome: 'Claude chose silence' });
+              return;
+            }
             const normalized = adviceKey(result.message);
             if (
               [...recent].some(
                 ([text, time]) => adviceKey(text) === normalized && now - time < 20000,
               )
-            )
+            ) {
+              diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });
               return;
+            }
+            diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });
             recent.set(result.message, now);
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,
@@ -247,6 +291,14 @@ export function createVisionModule(
             });
           })
           .catch((error: unknown) => {
+            diagnostic(requestId, {
+              latencyMs: performance.now() - started,
+              outcome: abort.signal.aborted
+                ? 'Cancelled: playback paused, ended or reset'
+                : error instanceof Error
+                  ? error.message
+                  : 'Coaching request failed',
+            });
             if (!stopped && version === mine && !abort.signal.aborted)
               coachingStore.set({
                 ...coachingStore.get(),

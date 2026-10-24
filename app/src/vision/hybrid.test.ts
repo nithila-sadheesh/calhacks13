@@ -146,6 +146,10 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
     expect(s.analyze).toHaveBeenCalledTimes(1);
     expect(s.advice).toEqual([]);
     expect(coachingStore.get().message).toBeUndefined();
+    expect(coachingStore.get().diagnostics?.[0]).toMatchObject({
+      outcome: 'Claude chose silence',
+      response: { reason: 'No new useful interaction.' },
+    });
     expect(coachingStore.get().cvFrames).toBeGreaterThan(5);
   } finally {
     s.module.stop();
