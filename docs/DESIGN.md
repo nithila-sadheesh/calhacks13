@@ -1,5 +1,28 @@
 # Learner Co-Pilot: Build Design Doc
 
+## Approved revision: video-language coaching
+
+This section is the current architecture, approved by the user during integration. It supersedes conflicting local-only detection, fixed-phrase-only and no-LLM requirements in the original v2 blueprint retained below for history.
+
+**Primary flow:** recorded video → 2–3 resized JPEG frames → server-side Claude Sonnet → validated JSON → `visionAdvice` → arbiter → Sonic → captions/timeline. Map remains context; map speech is optional (`?mapSpeech=1`) and advisory. This is supervised replay coaching, not immediate vehicle control.
+
+- `app/src/vision/index.ts` samples at most once per second; starts analysis after two frames; keeps the latest three; waits at least three seconds between request starts; allows one request in flight.
+- `/api/vision-advice` delegates to `server/visionAdvice.ts`. `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL` stay server-side. Default model is `claude-sonnet-5-5`. Native fetch is used; no SDK dependency.
+- The server owns the coaching prompt and JSON schema: `{ shouldSpeak: boolean, message: string, reason: string }`. False means an empty message and no speech. Prompt requests one concise, evidence-grounded observation/reminder, preferably 6–12 words. Shared validation caps speech at 180 characters, rejects malformed responses and obvious prohibited claims. Validation cannot guarantee perception or coaching correctness.
+- Requests carry only 2–3 JPEG frames, replay timestamps and up to three recent suggestions for repetition control. No map coordinates, microphone audio or client-supplied prompt/model/key. Request body ≤800 KB, each base64 frame ≤240 KB. Per-warm-instance limit: 30 requests/minute; not distributed authentication or quota enforcement.
+- Server timeout: 12 seconds; browser timeout: 13 seconds. Pause, seek, reset, trip end and disposal cancel analysis and invalidate responses. Results over eight seconds old in trip time are discarded. Advice expires ten seconds after its latest frame. These are starting values, not latency guarantees.
+- `VisionAdvice = { id, text, reason, tripMs, expiresMs }`. Only vision publishes it. `SpeakRequest.origin?: 'vision'` identifies validated generated text. Only arbiter publishes `speak`; voice validates and streams generated text. Video coaching has priority 1, optional map cues priority 2; legacy bundled warnings retain priority 0. New video suggestions replace queued older video/map suggestions without interrupting current ordinary speech. Repeat applies to the latest spoken coaching or route reminder.
+- Exact normalized repeated suggestions are suppressed for 20 seconds; the prompt also receives recent suggestions. This is not semantic duplicate detection. Silence is valid. Failures surface in analysis status without fabricated advice or dummy clips.
+- Privacy statement: sampled video frames are sent to Anthropic Claude; reminder text is sent to Cartesia Sonic; microphone audio is sent to Cartesia Ink only while push-to-talk is held; GPS coordinates are not sent, but visible locations may be recognizable in video frames. Browser setup and data-use UI must say this.
+- UI replaces detection boxes with collecting/analyzing/result/error status, observation, latest advice, analyzed frame time and response latency. The event timeline includes video advice and speech latency.
+- MediaPipe code remains available for legacy diagnostics/regression tests only; it does not run in the default app. It is not a second runtime inference pipeline.
+
+**Acceptance:** captured real frames reach the server; malformed/refused/failed responses never speak; valid JSON reaches real arbiter and Sonic transport; no overlapping requests/audio; pause/seek clears stale output; captions match generated speech; keys stay out of client assets; data-use disclosure shows Anthropic uploads. Verify live speaker/mic behavior manually in Chrome. Model latency must be measured, never assumed.
+
+**Measured spike:** one live request with three actual recorded frames returned HTTP 200 and validated coaching JSON in approximately 4.4 seconds. This is one response, not a latency benchmark or safety evaluation. Production deployment and full live-audio acceptance remain pending.
+
+## Original v2 blueprint (historical where superseded)
+
 ## Summary
 
 **Pitch:** a voice-first practice-driving companion. It uses the route ahead and an on-device camera to give a few timely, conservative coaching reminders, spoken by Cartesia Sonic, then helps the learner review the drive. Working name: Learner Co-Pilot.

@@ -1,73 +1,43 @@
-# Integration status and handoff
+# VLM integration status
 
-Current branch: `integration`. Rohit’s replay/arbiter/shell, Nithila’s voice/API/audio, and Jeev’s map/route tooling are merged. Tejas’s vision module is also merged. All four implementations are connected; real-footage detection and full-demo acceptance remain unverified.
+Current branch: `integration`. All four contributors’ code is merged. The user approved a new architecture: Claude interprets sampled video frames and generates coaching; Cartesia speaks the validated text. The old object detector is retained for legacy diagnostics, not the default app.
 
-## Requirements against the design
+## Working implementation
 
-| Requirement | Status | Evidence or remaining work |
-| --- | --- | --- |
-| Replay master clock, 1x lock, seek reset | Implemented; footage acceptance pending | Unit coverage; recorded video restored; full real-drive acceptance still needs matching GPS |
-| Arbiter priority, interruption, expiry, dedupe, spacing, mute/repeat | Implemented | Rule tests and real map/arbiter/voice integration test with simulated audio/transport |
-| GPS interpolation, route progress, cue generation and Upcoming panel | Implemented; real-drive acceptance pending | Map tests pass; current track/features remain placeholders |
-| Sonic streaming, local cancellation, fallback, bundled warnings | Implemented; live acceptance pending | Voice tests and combined pipeline coverage; six generated PCM files shipped |
-| Ink push-to-talk, command matching, privacy events | Implemented; live recognition pending | Simulated capture/transport tests; Chrome mic and noisy-room acceptance still required |
-| Captions, timeline, data-use panel, supervisor check | Implemented; full replay acceptance pending | Reducer tests and Chrome setup check |
-| Module startup and browser sound readiness | Implemented | Playback controls wait for modules and sound enable; Chrome readiness test passes |
-| Token endpoint and local routing | Implemented; deployed acceptance pending | Dev and production use `api/cartesia-token.ts`; Chrome cross-origin rejection test passes |
-| Frame processing, alerts, camera health and overlay | Implemented; real-footage acceptance pending | Local model/WASM load in Chrome; lifecycle tests cover frozen frames and recovery |
-| Track/video sync and 2–3 real route cues | Blocked by missing validated drive fixtures | Empty annotations cause two acceptance checks to skip |
-| Full real-drive demo and holdout report | Pending validated fixtures and recorded evidence | All module code merged; no full real-drive acceptance claim |
+- Video frames → `/api/vision-advice` → Claude → validated `visionAdvice` → arbiter → Sonic. Default model: `claude-sonnet-5-5`; optional server override `ANTHROPIC_MODEL`.
+- Map still publishes positions/cues and fills Upcoming. Map speech is off by default; append `?mapSpeech=1` to enable supplementary advisory reminders. No GPS is sent to Claude.
+- Vision samples once per second, keeps at most three resized JPEGs, starts after two, and starts at most one request every three seconds. Only one request is in flight. Pause/seek/reset/end/disposal abort analysis and discard obsolete results.
+- Results older than eight seconds are ignored; advice expires ten seconds after the newest analyzed frame. Exact repeated messages are suppressed for 20 seconds; recent suggestions also go into the prompt. New video advice replaces queued older video/map reminders. Ordinary model coaching waits for current speech to finish and respects mute; it never assigns emergency priority.
+- Server holds the prompt, key, model, schema and timeouts. POST bodies are bounded to 800 KB; each of 2–3 JPEGs is at most 240 KB base64. Explicit cross-origin requests are rejected. Warm-instance rate limit is 30/minute, not distributed access control.
+- Voice accepts generated text only with the vision origin marker and shared validation. Map wording and bundled clips retain their existing validation. No invented offline fallback for arbitrary coaching: failed streaming ends the line.
+- Replay waits for module startup and explicit **Enable replay sound**. Captions/timeline follow spoken coaching; overlay shows analysis state, observation, suggestion and response time. Setup/data-use UI discloses Anthropic frame uploads and Cartesia use.
+- Keys remain server-only. Image payloads are never logged or committed. Recorded video stays local except for sampled frames submitted to Anthropic. GPS is not sent; visual locations may be recognizable.
 
-## Remaining blockers
+## Run it
 
-- **Video asset restored:** Git LFS is installed and configured locally; the incoming 30,459,712-byte MP4 has been downloaded. Refresh the browser if it previously received the pointer. `ffprobe` identifies H.264, 3840×2160, yuv420p/BT.709, duration 11.28 seconds. It plays in Chrome, but is too short for the planned two-minute demo. Matching GPS, annotation alignment, and pedestrian suitability remain unverified; downloaded media alone does not establish those acceptance criteria.
-- **Jeev’s fixtures:** committed track has two points spanning 10 seconds; features contain one explicitly labelled placeholder stop sign. Obtain the matching GPX and run the existing track/route scripts. Verify curated changes, add two landmark annotations and expected cues using `app/src/map/NOTES.md`, then run the acceptance tests. Runtime never loads annotations. Do not invent coordinates or sync evidence.
-- **Vision acceptance:** frame processing, tracking, alerts, health and overlay are implemented. Verify pedestrian detection on the actual demo clip, show that disabling inference removes the alerts, tune only on the primary clip, then run a separate holdout without retuning and fill `app/src/vision/HOLDOUT.md`. Its empty result fields are not evidence of zero misses or false alerts.
-- **Live media/deployment:** verify Sonic, local interruption, Ink repeat/mute/unmute, offline clips, measured latency and pause/seek on the demo laptop in Chrome. Follow Nithila’s `app/src/voice/DEPLOYMENT.md` for Vercel and server-side key setup. No deployed endpoint or live microphone success is asserted here.
-- **Fallback captions:** the shared request carries the full route reminder while network fallback plays its approved shorter clip. Captions currently retain request text per the design contract. Exact fallback-caption synchronization needs an agreed voice-status contract before changing shared fields.
+1. Set `ANTHROPIC_API_KEY` and `CARTESIA_API_KEY` in git-ignored `.env`. Optional `ANTHROPIC_MODEL` defaults to Sonnet 5.5. Restart `npm run dev` after changing server environment variables.
+2. Open the root URL without mocks, check the supervisor box, load the drive, click **Enable replay sound**, then play. Expect analysis to take several seconds; silence is permitted when there is nothing useful to add.
+3. Watch the video-coach status and timeline. Upload metadata appears under Data use; no raw frames are listed. Repeat/mute/unmute use the existing push-to-talk controls.
+4. `?mock=vision` supplies scripted VLM-style advice without Anthropic requests. `?mock=voice` tests video/arbiter/UI without Cartesia audio. Mocks are always test inputs, never evidence of real analysis.
+5. The standalone `/app/src/voice/runtime.html` remains an audio-only diagnostic, not proof of the video-to-coaching flow.
 
-## Module connection rules
+## Verification and current limits
 
-- Real map → `position`/`mapCue`; arbiter → `speak`/`arbiterDecision`; voice → `speechStarted`/`speechEnded`/`voiceCommand`/`dataSent`. Speech lifecycle events echo the unique `speak.id`.
-- Shipped clip keys: `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. Tejas must use `pedestrianNearby`, not `pedestrian`.
-- Arbiter supplies `fallbackClipKey` for route cues. Voice accepts it only if it matches the approved fallback for the sentence; requests without it retain text-based fallback for compatibility. Traffic lights have no bundled fallback.
-- Dev Vite loads the same `api/cartesia-token.ts` entry point as Vercel, with server environment variables. `api/` is included in typechecking. Keys stay out of client assets and logs.
-- Panels subscribe before modules start. Playback remains unavailable until startup completes; with real voice, click **Enable replay sound** before video controls appear. Voice mock mode renders no real mic/audio controls.
-- Trip time comes from the video clock only. Map clears through `clock.onReset`; arbiter and voice clear on `tripReset`. Voice also cancels playback/capture on pause and end.
-- Arbiter lets a line finish on mute, suppresses later route cues, and still permits warnings and explicit repeat. Verify this behavior live.
-- An interrupted route cue is replayed once only while valid. Short map expiry windows can legitimately result in an expired drop after a warning; do not extend them merely to force a demo replay.
-- `useEvents` retains events since reset; do not use it for high-rate position history. UpcomingPanel uses the map-owned snapshot store.
-- Fixtures are served at `/demo-drive/...` and `/audio/...`. All map queries run in offline preparation scripts, never during replay.
+- Typecheck, lint and build pass; **254 unit/integration tests pass, 2 annotation checks skip**. The full Chrome suite passes **10 tests**, with the live API test skipped by default; that live check was also run separately and passed. Both configured keys were verified absent from the client build. Tests cover bounded/invalid requests, structured response validation, model errors/refusals, cancellation, duplicate/stale advice, queue/voice origin handling, repeat, real arbiter/voice transport wiring and replay controls.
+- A live opt-in check sent three real recorded frames to Anthropic. HTTP 200, valid coaching JSON, approximately **4.4 seconds** end-to-end API latency on that one request. It suggested scanning crosswalks and curb edges. The prompt was subsequently tightened to request shorter messages. This result does not establish robust latency or accurate scene understanding.
+- `npm run e2e` normally uses a mocked model endpoint for deterministic coaching coverage. `LIVE_VLM_CHECK=1 npm run e2e -- tests/e2e/coaching.spec.ts --grep 'live Claude'` performs one explicit real-model check; it sends frames and consumes credits. Legacy detector diagnostics are separate and do not describe production behavior.
+- The downloaded video is H.264, 3840×2160, yuv420p/BT.709, **11.28 seconds**. It is too short for the planned two-minute demo. Analysis plus speech can run beyond the remaining footage; trip end intentionally cancels old output. Obtain a longer suitable recording rather than stretching/replaying timestamps to simulate analysis.
+- Track/features remain placeholders (two GPS points, one labelled curated stop). Two annotation acceptance tests remain skipped. Matching GPX and real annotated landmarks are needed before claiming map/video sync; map speech is therefore optional by default.
+- Live Sonic audio, audible overlap/latency, Ink recognition and full rehearsal still need demo-laptop verification. Simulated transport tests do not prove speaker output.
+- Prompt/text filters are conservative guardrails, not a guarantee of correct or timely driving advice. No lane-clearance/right-of-way/light-color/speed-limit or emergency-action claims are allowed. A recording/holdout review with model errors and omissions remains required.
+- Exact duplicate detection does not catch every paraphrase. Tune cadence, message length, freshness windows and prompt from measured replay behavior; do not force a message for every request.
+- Vercel deployment remains unverified. Configure both server keys, deploy API functions with the app, and check real HTTPS requests. Function timeout for analysis is 20 seconds; upstream timeout 12 seconds. Do not expose keys with `VITE_` prefixes.
+- Optional map fallback captions still retain the full request when a shorter bundled route clip plays. Exact fallback-caption reporting needs a separate contract decision; this does not affect generated video text.
 
-## How to inspect the current app
+## Files to change next
 
-1. Run `npm ci` if dependencies are absent, then `npm run dev`. Open Vite’s printed local URL.
-2. `/` selects all four real modules. `/?mock=vision` selects real map/arbiter/voice with a scripted alert. `/?mock=map,vision` selects scripted route/alert inputs with real arbiter/voice. `/?mock=map,vision,voice` tests the shell without Cartesia or audio. Mocks are test inputs, never detection evidence.
-3. Check the supervisor box, load the drive, and wait for startup. With real voice click **Enable replay sound**, then use the video controls. The actual LFS media is now present locally for replay. The current GPS/features are placeholders and do not establish alignment with the incoming video.
-4. Without playable video, `/app/src/voice/runtime.html` exercises the production voice engine, bundled clips, interruption and push-to-talk independently of replay. Enable sound there. Sonic/Ink need `CARTESIA_API_KEY` configured server-side; preloaded bundled clips do not. The older `spike.html` is an early experiment, not the integrated app.
-5. Inspect captions, Upcoming, the overlay, timeline and data-use panel. Repeat/mute commands belong to the arbiter; the standalone voice test page does not prove the full arbiter interaction.
-6. Once video/GPS are validated, run the full browser suite and `tests/e2e/smoke.md`, exercise all four real modules without `?mock=`, and rehearse before a merge to main.
-
-## Integration fixes after vision merge
-
-- Vision now uses the shipped `pedestrianNearby` clip key, so detector-derived alerts can play the bundled warning through real arbiter/voice.
-- Frames are downscaled locally to at most 640 pixels wide; bounding boxes are normalized against the resized frame. The local model/WASM load is checked in Chrome with no external asset requests.
-- A frozen video timestamp is processed once rather than accumulating repeated-frame alert evidence. The watchdog reports a stall and detects recovery when frames resume.
-- Repeated vision starts dispose the old runtime; stopping during model loading closes the late detector. Reset clears cached speed/frame identity and preserves unavailable-detector status.
-- No shared contract changes, dependencies, synthetic runtime cues or network inference were introduced.
-
-## Verification
-
-Typecheck, lint and production build pass. Unit/integration suite: **239 passed, 2 skipped**. The skipped tests need real landmark and expected-cue annotations. Combined tests exercise mock and real map, plus a real vision runtime/tracker/alert engine with simulated detector output, through real arbiter/voice. Audio/network are simulated; cases include offline fallback, interruption, repeat, pause and seek reset. Synthetic route fixtures exist only in tests.
-
-Four Chrome checks pass: supervisor setup, implemented local token routing, delayed voice-loading/sound-unlock gating, and actual local vision model/WASM initialization. All eight Chrome tests now pass, including cue/alert mock replay, seek reset, pause and 1x lock with the restored video. Browser sound-context unlocking does not prove audible speaker output or microphone recognition, and mock replay does not prove real pedestrian detection.
-
-## Existing contract additions retained
-
-Rohit’s branch adds optional `SpeakRequest.fallbackClipKey`, optional `ArbiterDecision.speakId`, and cause-first `onAny` listener ordering. Integration adds no new shared fields or dependencies. Further shared contract changes require team approval.
-
-## Recorded-clip inference diagnostic
-
-`npm run e2e -- tests/e2e/videoInference.spec.ts` runs the actual local detector, tracker and alert rules over recorded frames sampled every 125 ms. On the current 11.28-second video: 90 frames processed, 148 total detections, 74 person detections, maximum person confidence 0.6973, and only 3 frames meeting the pedestrian confidence/forward-region criteria. No alert fired because the 4-of-5 rule was never met. These are repeated frame detections, not counts of distinct people. This diagnostic uses no audio/network transport, leaves following-distance disabled and does not establish GPS alignment or holdout performance.
-
-Video currently supplies fixed pedestrian warnings, with following-distance as an intentionally disabled optional fallback. It does not generate arbitrary scene descriptions or driving instructions. Cartesia receives reminder text for speech, never video. Use the root URL with no `mock=vision` when testing actual detection. Choose suitable demo footage and validate/tune with the owner rather than forcing alerts or inserting scripted timestamps.
+- Prompt/model request: `server/visionAdvice.ts`; endpoint: `api/vision-advice.ts`.
+- Cadence, freshness, cancellation: `app/src/vision/index.ts`; frame size/quality: `capture.ts`.
+- Wire validation/text constraints: `shared/coaching.ts`; event contracts: `shared/types.ts`.
+- Priority and queue policy: `app/src/arbiter/`; audio: `app/src/voice/`.
+- Legacy detector: `app/src/vision/localRuntime.ts`, `detector.ts`, tracker/alerts/config and associated tests. Production does not load the local model/WASM assets.
