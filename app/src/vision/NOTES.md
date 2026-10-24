@@ -26,3 +26,7 @@ Scene objects optionally carry normalized imageBox x/y/w/h through the validated
 ### Request diagnostics
 
 The overlay includes an expandable Coaching request diagnostics panel. It retains up to 30 local records containing submitted object snapshots, validated model responses, latency and disposition (silence, duplicate suppression, sent to arbiter, stale, cancelled or error). Records survive pause/end and clear on tripReset or module stop. No additional network requests are made. Cancelled requests may have no model response because the existing lifecycle aborts them. A sent-to-arbiter disposition does not prove audio played. Invalid responses are recorded as validation errors; raw invalid provider output is not displayed.
+
+### Periodic replay reminders
+
+Production replay now offers a local fallback about every three seconds without new advice, provided no speech request is active. A current stable object supplies a short image-side attention cue; with no stable objects the fallback asks the learner to observe/scan. This runs even while Claude is pending or silent, without extra model calls. The arbiter still controls actual playback, spacing and mute, so three seconds is a target rather than a speech-start guarantee. Reminders are explicitly labeled periodic local reminders in the timeline, not Claude outputs. Forward-camera person detections are called people, not assumed pedestrians. Road geometry is unknown: no instruction to continue straight is inferred. `periodicReminders: false` is available for isolated module tests.

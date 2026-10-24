@@ -42,6 +42,9 @@ test('local CV generates image-free coaching through the real arbiter and speech
     'map shown for context only',
   );
   await expect(page.locator('video')).toHaveJSProperty('ended', true, { timeout: 15000 });
+  await expect(page.getByRole('region', { name: 'Timeline' })).toContainText(
+    'Periodic local observation reminder',
+  );
   await page.getByText(/Coaching request diagnostics/).click();
   const diagnostics = page
     .locator('.coaching-evidence')

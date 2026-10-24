@@ -8,7 +8,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
-function setup() {
+function setup(periodicReminders = false) {
   vi.useFakeTimers();
   let ms = 0;
   let x = 0.1;
@@ -34,7 +34,7 @@ function setup() {
     coachingPoint: 'Monitor that road user.',
     sceneChanged: false,
   });
-  const module = createVisionModule({ loadDetector, analyze });
+  const module = createVisionModule({ loadDetector, analyze, periodicReminders });
   const advice: VisionAdvice[] = [];
   bus.on('visionAdvice', (value) => advice.push(value));
   const advance = async (duration: number) => {
@@ -151,6 +151,31 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
       response: { reason: 'No new useful interaction.' },
     });
     expect(coachingStore.get().cvFrames).toBeGreaterThan(5);
+  } finally {
+    s.module.stop();
+  }
+});
+
+it('offers periodic local reminders while Claude chooses silence and respects active speech', async () => {
+  const s = setup(true);
+  s.analyze.mockResolvedValue({ shouldSpeak: false, message: '', reason: 'No stronger cue.' });
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(3500);
+    expect(s.advice).toHaveLength(1);
+    expect(s.advice[0]?.text).toContain('car on your left');
+    s.bus.emit('speak', {
+      id: 'busy',
+      text: 'Keep observing.',
+      priority: 1,
+      sourceId: 'test',
+      origin: 'vision',
+    });
+    await s.advance(4000);
+    expect(s.advice).toHaveLength(1);
+    s.bus.emit('speechEnded', { id: 'busy', interrupted: false });
+    await s.advance(200);
+    expect(s.advice).toHaveLength(2);
   } finally {
     s.module.stop();
   }
