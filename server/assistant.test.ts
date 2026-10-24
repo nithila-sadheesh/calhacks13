@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TripContext } from '../shared/assistant.ts';
+import { parseDelivery, type TripContext } from '../shared/assistant.ts';
 import { unsafeReason } from '../shared/safeWording.ts';
 import {
   ANSWER_EXAMPLES,
@@ -19,7 +19,9 @@ const context: TripContext = {
   upcoming: [{ kind: 'stopSign', street: 'Oxford Street', distM: 60 }],
 };
 
-function setup(reply: { say: string; action?: string } | 'refusal' | Error) {
+function setup(
+  reply: { say: string; action?: string; emotion?: string; pace?: string } | 'refusal' | Error,
+) {
   const create = vi.fn(async (body: unknown) => {
     void body;
     if (reply instanceof Error) throw reply;
@@ -68,6 +70,37 @@ describe('assistant endpoint', () => {
     expect(await (await s.post(ask('can I go'))).json()).toEqual({ text: DEFLECT });
   });
 
+  it("passes Claude's delivery with its own words, but not with a deflection", async () => {
+    const s = setup({ say: "That's completely normal.", emotion: 'sympathetic', pace: 'slower' });
+    expect(await (await s.post(ask("I'm nervous"))).json()).toEqual({
+      text: "That's completely normal.",
+      delivery: { emotion: 'sympathetic', pace: 'slower' },
+    });
+    const unsafe = setup({ say: 'The lane is clear.', emotion: 'confident', pace: 'normal' });
+    expect(await (await unsafe.post(ask('can I merge'))).json()).toEqual({ text: DEFLECT });
+  });
+
+  it('drops a delivery outside the fixed set instead of guessing', async () => {
+    const s = setup({ say: 'Next is a crosswalk.', emotion: 'panicked', pace: 'normal' });
+    expect(await (await s.post(ask("what's next"))).json()).toEqual({
+      text: 'Next is a crosswalk.',
+    });
+  });
+
+  it('asks for emotion and pace in the answer schema and emotion only for cues', async () => {
+    const s = setup({ say: 'ok', emotion: 'calm', pace: 'normal' });
+    await s.post(ask('hello'));
+    await s.post({ mode: 'cue', feature: { kind: 'crosswalk' }, context });
+    const schema = (call: number) =>
+      (
+        s.create.mock.calls[call]![0] as {
+          output_config: { format: { schema: { required: string[] } } };
+        }
+      ).output_config.format.schema.required;
+    expect(schema(0)).toEqual(['say', 'action', 'emotion', 'pace']);
+    expect(schema(1)).toEqual(['say', 'emotion']);
+  });
+
   it('returns a repeat action without speaking extra text', async () => {
     const s = setup({ say: 'Repeating that.', action: 'repeat' });
     expect(await (await s.post(ask('what did you say'))).json()).toEqual({ action: 'repeat' });
@@ -104,6 +137,15 @@ describe('assistant endpoint', () => {
     });
     expect((await setup({ say: 'Stop sign. The light is green.' }).post(cue)).status).toBe(422);
     expect((await setup({ say: '' }).post(cue)).status).toBe(422);
+  });
+
+  it('gives a worded cue its emotion and always the normal pace', async () => {
+    const s = setup({ say: 'Crosswalk ahead. Scan both sides.', emotion: 'confident' });
+    const cue = { mode: 'cue', feature: { kind: 'crosswalk' }, context };
+    expect(await (await s.post(cue)).json()).toEqual({
+      text: 'Crosswalk ahead. Scan both sides.',
+      delivery: { emotion: 'confident', pace: 'normal' },
+    });
   });
 
   it('rejects cross-origin, malformed and keyless requests before calling Claude', async () => {
@@ -143,6 +185,14 @@ describe('assistant endpoint', () => {
     );
     expect(lines.length).toBeGreaterThan(70);
     for (const line of lines.filter(Boolean)) expect(unsafeReason(line), line).toBeUndefined();
+
+    // Every example shows a delivery from the fixed set, so the model never sees an invalid one.
+    const outputs = ANSWER_EXAMPLES.split('\n').filter((l) => l.startsWith('{"say"'));
+    expect(outputs).toHaveLength(lines.length);
+    for (const output of outputs) {
+      const { emotion, pace } = JSON.parse(output) as { emotion: unknown; pace: unknown };
+      expect(parseDelivery({ emotion, pace }), output).toEqual({ emotion, pace });
+    }
   });
 
   it('frames the question as transcribed speech after the context', () => {

@@ -1,7 +1,7 @@
 // Wire format between the browser's assistant module and POST /api/assistant. The browser sends a
 // short trip summary: what was said, recent alerts, upcoming features by street and distance, and
 // speed. Never video, images or GPS coordinates (AGENTS.md section 3 rule 9).
-import type { MapFeatureKind } from './types.ts';
+import type { Delivery, DeliveryEmotion, MapFeatureKind } from './types.ts';
 
 export type TripContext = {
   speedMps?: number;
@@ -16,9 +16,16 @@ export type AssistantRequest =
   | { mode: 'cue'; feature: { kind: MapFeatureKind; street?: string }; context: TripContext };
 
 export type AssistantAction = 'repeat' | 'mute' | 'unmute';
-export type AssistantResponse = { text?: string; action?: AssistantAction };
+export type AssistantResponse = { text?: string; action?: AssistantAction; delivery?: Delivery };
 
 export const MAX_QUESTION_CHARS = 500;
+export const DELIVERY_EMOTIONS: readonly DeliveryEmotion[] = [
+  'calm',
+  'confident',
+  'content',
+  'sympathetic',
+];
+export const DELIVERY_PACES: readonly Delivery['pace'][] = ['normal', 'slower'];
 const KINDS: readonly MapFeatureKind[] = [
   'turnLeft',
   'turnRight',
@@ -85,6 +92,14 @@ export function parseAssistantRequest(v: unknown): AssistantRequest | undefined 
   return undefined;
 }
 
+// Anything off the list is dropped rather than guessed, so the voice keeps its default.
+export function parseDelivery(v: unknown): Delivery | undefined {
+  if (!isRecord(v)) return undefined;
+  const emotion = DELIVERY_EMOTIONS.find((e) => e === v.emotion);
+  if (!emotion) return undefined;
+  return { emotion, pace: DELIVERY_PACES.find((p) => p === v.pace) ?? 'normal' };
+}
+
 export function parseAssistantResponse(v: unknown): AssistantResponse | undefined {
   if (!isRecord(v)) return undefined;
   const response: AssistantResponse = {};
@@ -92,5 +107,8 @@ export function parseAssistantResponse(v: unknown): AssistantResponse | undefine
   if (text) response.text = text;
   const action = ACTIONS.find((a) => a === v.action);
   if (action) response.action = action;
+  // A delivery means nothing without the words it shapes.
+  const delivery = text ? parseDelivery(v.delivery) : undefined;
+  if (delivery) response.delivery = delivery;
   return response.text || response.action ? response : undefined;
 }

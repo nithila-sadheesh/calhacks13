@@ -1,5 +1,20 @@
+import { parseDelivery } from '../../../shared/assistant.ts';
+import type { Delivery } from '../../../shared/types.ts';
 import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
 import { decodePcm } from './pcm.ts';
+
+// Sonic treats speed as guidance and small changes are hard to hear, so 'slower' is a clear step.
+export const SLOWER_SPEED = 0.8;
+
+// Volume is never set: loudness stays the same for every line. Anything off the shared list falls
+// back to the calm default rather than reaching Sonic.
+export function generationConfig(delivery?: Delivery): { emotion: string; speed?: number } {
+  const checked = parseDelivery(delivery);
+  if (!checked) return { emotion: 'calm' };
+  return checked.pace === 'slower'
+    ? { emotion: checked.emotion, speed: SLOWER_SPEED }
+    : { emotion: checked.emotion };
+}
 
 export type SonicMessage =
   | { id: string; type: 'chunk'; samples: Float32Array }
@@ -8,7 +23,7 @@ export type SonicMessage =
 export type SonicTransport = {
   // Opens the session ahead of the first request. Best effort: send() connects if this failed.
   warm(): void;
-  send(id: string, text: string): Promise<void>;
+  send(id: string, text: string, delivery?: Delivery): Promise<void>;
   cancel(id: string): void;
   close(): void;
 };
@@ -116,7 +131,7 @@ export function createSonicTransport(
         /* The first send() retries the connection. */
       });
     },
-    async send(id, text) {
+    async send(id, text, delivery) {
       const ws = await connect();
       if (stopped || cancelled.has(id)) return;
       ws.send(
@@ -125,7 +140,7 @@ export function createSonicTransport(
           voice: VOICE_ID,
           transcript: text,
           language: 'en',
-          generation_config: { emotion: 'calm' },
+          generation_config: generationConfig(delivery),
           context_id: id,
           continue: false,
           max_buffer_delay_ms: 0,

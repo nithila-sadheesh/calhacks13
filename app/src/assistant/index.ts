@@ -78,7 +78,11 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
         };
         if (reply?.action) event.action = reply.action;
         // The server already checked the wording; check again before anything can be spoken.
-        if (reply?.text) event.text = isSafeToSpeak(reply.text) ? reply.text : UNAVAILABLE;
+        if (reply?.text) {
+          const safe = isSafeToSpeak(reply.text);
+          event.text = safe ? reply.text : UNAVAILABLE;
+          if (safe && reply.delivery) event.delivery = reply.delivery;
+        }
         // The driver asked out loud, so a failed or empty reply still gets an audible answer.
         if (!event.text && !event.action) event.text = UNAVAILABLE;
         bus.emit('assistantReply', event);
@@ -101,7 +105,9 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
             CUE_TIMEOUT_MS,
           );
           if (mine !== controller || !reply?.text || !isSafeToSpeak(reply.text)) return;
-          bus.emit('cueWording', { featureId: ahead.featureId, text: reply.text });
+          const wording: Events['cueWording'] = { featureId: ahead.featureId, text: reply.text };
+          if (reply.delivery) wording.delivery = reply.delivery;
+          bus.emit('cueWording', wording);
         } catch (e: unknown) {
           // The map's template is spoken instead.
           if (!mine.signal.aborted) log('assistant', 'cue wording failed', String(e));

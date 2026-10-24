@@ -455,7 +455,11 @@ describe('assistant', () => {
     h.send(
       {
         type: 'cueWording',
-        wording: { featureId: 'stop-1', text: 'Stop sign on Oxford. Plan a full stop.' },
+        wording: {
+          featureId: 'stop-1',
+          text: 'Stop sign on Oxford. Plan a full stop.',
+          delivery: { emotion: 'confident', pace: 'normal' },
+        },
       },
       0,
     );
@@ -463,6 +467,7 @@ describe('assistant', () => {
     expect(h.speaks[0]).toMatchObject({
       text: 'Stop sign on Oxford. Plan a full stop.',
       fallbackClipKey: 'stopSign',
+      delivery: { emotion: 'confident', pace: 'normal' },
     });
     expect(h.decisions[0]).toEqual(['cue-1', 'spoken', 'cue window open (Claude wording)']);
     h.end(3000);
@@ -481,6 +486,23 @@ describe('assistant', () => {
     expect(h.speaks[1]?.text).toBe(
       'Left turn ahead onto Main. Check for pedestrians before turning.',
     );
+    // A template is an approved phrase in the default voice; it never borrows a delivery.
+    expect(h.speaks[1]?.delivery).toBeUndefined();
+  });
+
+  it("speaks an answer with Claude's delivery, and gives a slower line more time", () => {
+    const delivery = { emotion: 'sympathetic', pace: 'slower' } as const;
+    const slow = new Harness();
+    slow.send({ type: 'answer', reply: reply({ delivery }) }, 1000);
+    expect(slow.speaks[0]?.delivery).toEqual(delivery);
+    slow.send({ type: 'tick' }, 8000);
+    expect(slow.currentId).toBeDefined();
+
+    const normal = new Harness();
+    normal.send({ type: 'answer', reply: reply() }, 1000);
+    expect(normal.speaks[0]?.delivery).toBeUndefined();
+    normal.send({ type: 'tick' }, 8000);
+    expect(normal.currentId).toBeUndefined();
   });
 
   it('a reset forgets wording from the previous pass', () => {

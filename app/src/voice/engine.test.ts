@@ -251,6 +251,17 @@ describe('generated wording', () => {
     expect(s.send).toHaveBeenCalledWith(
       expect.any(String),
       'The stop sign is about 60 meters ahead.',
+      undefined,
+    );
+  });
+  it("streams a generated line with Claude's delivery", () => {
+    const s = setup();
+    const delivery = { emotion: 'sympathetic', pace: 'slower' } as const;
+    s.speak('answer', { text: "That's completely normal.", delivery });
+    expect(s.send).toHaveBeenCalledWith(
+      expect.any(String),
+      "That's completely normal.",
+      delivery,
     );
   });
   it('refuses an unsafe line without sending it', () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSonicTransport } from './sonic.ts';
+import { createSonicTransport, generationConfig, SLOWER_SPEED } from './sonic.ts';
 
 class Socket {
   static OPEN = 1;
@@ -51,6 +51,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+describe('Sonic generation config', () => {
+  it('keeps the calm default for templates and anything off the shared list', () => {
+    expect(generationConfig()).toEqual({ emotion: 'calm' });
+    expect(generationConfig({ emotion: 'panicked', pace: 'normal' } as never)).toEqual({
+      emotion: 'calm',
+    });
+  });
+
+  it("maps Claude's delivery to emotion and speed, and never sets volume", () => {
+    expect(generationConfig({ emotion: 'confident', pace: 'normal' })).toEqual({
+      emotion: 'confident',
+    });
+    expect(generationConfig({ emotion: 'sympathetic', pace: 'slower' })).toEqual({
+      emotion: 'sympathetic',
+      speed: SLOWER_SPEED,
+    });
+  });
+
+  it('sends the delivery on the request', async () => {
+    const s = setup();
+    const pending = s.transport.send('one', 'That is normal.', {
+      emotion: 'sympathetic',
+      pace: 'slower',
+    });
+    await flush();
+    Socket.instances[0]!.open();
+    await pending;
+    expect(Socket.instances[0]!.sent[0]).toMatchObject({
+      generation_config: { emotion: 'sympathetic', speed: SLOWER_SPEED },
+    });
+    s.transport.close();
+  });
+});
+
 describe('Sonic session transport', () => {
   it('warm opens the session ahead of the first request, which then reuses it', async () => {
     const s = setup();
