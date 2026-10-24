@@ -133,3 +133,18 @@ describe('Sonic session transport', () => {
     s.transport.close();
   });
 });
+
+it('warms the session without sending text and reuses it for the first line', async () => {
+  const s = setup();
+  const pending = s.transport.warmup!();
+  await flush();
+  const socket = Socket.instances[0]!;
+  expect(socket.sent).toEqual([]);
+  socket.open();
+  await pending;
+  await s.transport.send('first', 'Crosswalk ahead. Scan both sides.');
+  expect(Socket.instances).toHaveLength(1);
+  expect(s.fetcher).toHaveBeenCalledTimes(1);
+  expect(s.sent).toHaveBeenCalledTimes(1);
+  s.transport.close();
+});

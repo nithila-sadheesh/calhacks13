@@ -82,6 +82,9 @@ export function createVoiceModule(): AppModule & {
     async enableAudio() {
       if (!player) throw new Error('Voice is still loading.');
       await player.enable();
+      // Establish the session before replay so token/WebSocket setup does not consume
+      // the first spoken line's 1.5 s audio deadline.
+      await engine?.prepare();
     },
     async pressToTalk() {
       if (mic) await mic.press();

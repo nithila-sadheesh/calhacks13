@@ -108,6 +108,29 @@ test('local token route reaches the production handler and rejects cross-origin 
 test('real voice loads clips and unlocks sound before replay controls are offered', async ({
   page,
 }) => {
+  await page.route('**/api/cartesia-token', (route) =>
+    route.fulfill({ json: { token: 'test-token' } }),
+  );
+  await page.addInitScript(() => {
+    class FakeSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen?: () => void;
+      onclose?: () => void;
+      constructor() {
+        setTimeout(() => {
+          this.readyState = 1;
+          this.onopen?.();
+        }, 0);
+      }
+      send() {}
+      close() {
+        this.readyState = 3;
+        this.onclose?.();
+      }
+    }
+    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;

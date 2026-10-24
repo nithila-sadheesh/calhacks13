@@ -121,6 +121,9 @@ export function createVoiceEngine(options: {
     },
   );
   return {
+    async prepare() {
+      await transport.warmup?.();
+    },
     speak(request: SpeakRequest) {
       if (stopped) return;
       if (

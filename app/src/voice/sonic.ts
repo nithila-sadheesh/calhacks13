@@ -6,6 +6,7 @@ export type SonicMessage =
   | { id: string; type: 'done' }
   | { id: string; type: 'error' };
 export type SonicTransport = {
+  warmup?(): Promise<void>;
   send(id: string, text: string): Promise<void>;
   cancel(id: string): void;
   close(): void;
@@ -109,6 +110,9 @@ export function createSonicTransport(
     }
   }
   return {
+    async warmup() {
+      await connect();
+    },
     async send(id, text) {
       const ws = await connect();
       if (stopped || cancelled.has(id)) return;
