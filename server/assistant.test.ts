@@ -81,9 +81,9 @@ describe('assistant endpoint', () => {
     });
   });
 
-  it('stays silent when the speech was unclear', async () => {
+  it('never answers with silence, even when the speech was unclear', async () => {
     const s = setup({ say: '' });
-    expect(await (await s.post(ask('uh the thing'))).json()).toEqual({});
+    expect(await (await s.post(ask('uh the thing'))).json()).toEqual({ text: UNAVAILABLE });
   });
 
   it('a refusal becomes a polite fallback line', async () => {

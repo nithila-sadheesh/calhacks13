@@ -13,7 +13,7 @@ const MIC_LABELS: Record<MicStatus, string> = {
 };
 const COMMAND_LABELS = { repeat: 'Repeat', mute: 'Mute', unmute: 'Unmute' } as const;
 const ACTION_RESULTS = {
-  repeat: 'Repeating the last reminder.',
+  repeat: 'Repeating the last line.',
   mute: 'Reminders muted. Warnings still play.',
   unmute: 'Reminders back on.',
 } as const;
@@ -32,10 +32,9 @@ export function VoicePanel({ ctx }: PanelProps) {
   const reply = query && [...replies].reverse().find((r) => r.queryId === query.id);
   const last = started.at(-1);
   const command = commands.at(-1);
-  const nothingToRepeat =
-    command?.kind === 'repeat' &&
-    decisions.at(-1)?.sourceId === 'repeat' &&
-    decisions.at(-1)?.reason === 'nothing to repeat';
+  const repeatDropped =
+    decisions.at(-1)?.sourceId === 'repeat' && decisions.at(-1)?.reason === 'nothing to repeat';
+  const nothingToRepeat = command?.kind === 'repeat' && repeatDropped;
   const active = status === 'connecting' || status === 'listening';
   useEffect(() => {
     const hidden = () => {
@@ -93,9 +92,11 @@ export function VoicePanel({ ctx }: PanelProps) {
           <div className="exchange">
             <p className="muted">You asked: “{query.transcript}”</p>
             <p>
-              {reply
-                ? (reply.text ?? (reply.action ? ACTION_RESULTS[reply.action] : ''))
-                : 'Thinking…'}
+              {!reply
+                ? 'Thinking…'
+                : reply.action === 'repeat' && repeatDropped
+                  ? 'Nothing to repeat yet.'
+                  : (reply.text ?? (reply.action ? ACTION_RESULTS[reply.action] : ''))}
             </p>
           </div>
         )}

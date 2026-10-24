@@ -79,8 +79,8 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
         if (reply?.action) event.action = reply.action;
         // The server already checked the wording; check again before anything can be spoken.
         if (reply?.text) event.text = isSafeToSpeak(reply.text) ? reply.text : UNAVAILABLE;
-        // A reply with nothing in it is deliberate silence (unclear speech); only a failure apologizes.
-        if (!reply) event.text = UNAVAILABLE;
+        // The driver asked out loud, so a failed or empty reply still gets an audible answer.
+        if (!event.text && !event.action) event.text = UNAVAILABLE;
         bus.emit('assistantReply', event);
       }
 

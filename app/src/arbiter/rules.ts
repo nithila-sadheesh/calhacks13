@@ -54,7 +54,7 @@ export type ArbiterState = {
   current?: { item: Item; speakId: string; startedMs: number };
   spokenKeys: ReadonlySet<string>;
   lastAlertMs: Readonly<Partial<Record<WebcamAlert['kind'], number>>>;
-  lastCue?: Item;
+  lastLine?: Item; // last cue or answer, for repeat; alerts are never repeated
   cueWording: ReadonlyMap<string, string>; // featureId -> Claude wording, used if it arrived in time
   lastEndMs?: number;
   muted: boolean;
@@ -297,7 +297,7 @@ function onVoice(run: Run, kind: 'repeat' | 'mute' | 'unmute') {
     });
     return;
   }
-  const last = s.lastCue;
+  const last = s.lastLine;
   if (!last) return decide(run, 'repeat', 'dropped', 'nothing to repeat');
   offer(run, {
     ...last,
@@ -376,7 +376,7 @@ function speak(run: Run, item: Item) {
   s.current = { item, speakId, startedMs: nowMs };
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
-  if (item.origin === 'cue') s.lastCue = item;
+  if (item.origin === 'cue' || item.origin === 'answer') s.lastLine = item;
 
   const request: SpeakRequest = {
     id: speakId,

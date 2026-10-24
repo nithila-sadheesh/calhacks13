@@ -353,7 +353,7 @@ describe('rule: repeat', () => {
     expect(h.speaks).toHaveLength(2);
   });
 
-  it('drops a repeat when no cue has been spoken', () => {
+  it('drops a repeat when no cue or answer has been spoken', () => {
     const h = new Harness();
     h.send({ type: 'voice', kind: 'repeat' }, 0);
     expect(h.decisions).toEqual([['repeat', 'dropped', 'nothing to repeat']]);
@@ -517,6 +517,20 @@ describe('assistant', () => {
     h.end(3000);
     h.send({ type: 'answer', reply: reply({ action: 'repeat', text: 'Repeating.' }) }, 5000);
     expect(h.speaks.map((s) => s.text)).toEqual([cue().text, cue().text]);
+  });
+
+  it('a repeat replays the last answer when it came after the last cue', () => {
+    const h = new Harness();
+    h.send({ type: 'cue', cue: cue() }, 0);
+    h.end(3000);
+    h.send({ type: 'answer', reply: reply() }, 4000);
+    h.end(6000);
+    h.send({ type: 'voice', kind: 'repeat' }, 6000 + REPLAY_GAP_MS);
+    expect(h.speaks.map((s) => s.text)).toEqual([
+      cue().text,
+      'The stop sign is about 60 meters ahead.',
+      'The stop sign is about 60 meters ahead.',
+    ]);
   });
 
   it('a mute action mutes and speaks its confirmation; later reminders are dropped', () => {

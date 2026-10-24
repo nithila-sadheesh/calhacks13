@@ -86,13 +86,12 @@ describe('assistant module', () => {
     s.module.stop();
   });
 
-  it('posts a reply with nothing to say when the server stays silent', async () => {
+  it('says it cannot answer when the server reply is empty', async () => {
     const s = setup(() => ok({}));
     await s.module.start(s.ctx);
     s.ask('uh the thing');
     await settle();
-    expect(s.of('assistantReply')[0]).toMatchObject({ queryId: 'query-1' });
-    expect(s.of('assistantReply')[0]?.text).toBeUndefined();
+    expect(s.of('assistantReply')[0]).toMatchObject({ queryId: 'query-1', text: UNAVAILABLE });
     expect(s.of('assistantReply')[0]?.action).toBeUndefined();
     s.module.stop();
   });
