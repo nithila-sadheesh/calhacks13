@@ -9,11 +9,27 @@ import type {
 } from '../../../shared/types.ts';
 
 export type TimelineEvent = {
-  [K in 'mapCue' | 'webcamAlert' | 'speak' | 'arbiterDecision' | 'speechStarted' | 'tripReset']: {
+  [
+    K in
+      | 'visionAdvice'
+      | 'mapCue'
+      | 'webcamAlert'
+      | 'speak'
+      | 'arbiterDecision'
+      | 'speechStarted'
+      | 'tripReset'
+  ]: {
     type: K;
     payload: Events[K];
   };
-}['mapCue' | 'webcamAlert' | 'speak' | 'arbiterDecision' | 'speechStarted' | 'tripReset'];
+}[
+  | 'visionAdvice'
+  | 'mapCue'
+  | 'webcamAlert'
+  | 'speak'
+  | 'arbiterDecision'
+  | 'speechStarted'
+  | 'tripReset'];
 
 export type TimelineState = {
   sources: Readonly<Record<string, { label: string; why: string }>>;
@@ -56,6 +72,13 @@ export function timelineReducer(state: TimelineState, event: TimelineEvent): Tim
       const { id, featureKind, reason } = event.payload;
       const source = { label: FEATURE_LABELS[featureKind], why: reason };
       return { ...state, sources: { ...state.sources, [id]: source } };
+    }
+    case 'visionAdvice': {
+      const { id, reason } = event.payload;
+      return {
+        ...state,
+        sources: { ...state.sources, [id]: { label: 'Video coaching', why: reason } },
+      };
     }
     case 'webcamAlert': {
       const { id, kind, reason } = event.payload;

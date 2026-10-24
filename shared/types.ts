@@ -34,9 +34,18 @@ export type WebcamAlert = {
   clipKey: string; // key in fixtures/audio/manifest.json
 };
 
+export type VisionAdvice = {
+  id: string;
+  text: string;
+  reason: string;
+  tripMs: number; // time of the newest analyzed frame
+  expiresMs: number;
+};
+
 export type SpeakRequest = {
   id: string;
-  sourceId: string; // the MapCue/WebcamAlert id, for the timeline
+  sourceId: string; // observation id, for the timeline
+  origin?: 'vision'; // validated generated coaching, streamed through Sonic
   text: string; // always present: shown as a caption
   clipKey?: string; // play a bundled clip instead of streaming
   fallbackClipKey?: string; // bundled clip to play if streaming fails or is slow
@@ -53,7 +62,7 @@ export type ArbiterDecision = {
 };
 
 export type DataSent = {
-  destination: 'cartesia-tts' | 'cartesia-stt';
+  destination: 'cartesia-tts' | 'cartesia-stt' | 'anthropic-vision';
   summary: string; // e.g. 'text: "Stop sign ahead..."' or 'mic audio, 2.1 s'
   tripMs: number;
 };
@@ -62,7 +71,8 @@ export type DataSent = {
 export type Events = {
   position: Position; // Jeev
   mapCue: MapCue; // Jeev
-  webcamAlert: WebcamAlert; // Tejas
+  visionAdvice: VisionAdvice; // vision (VLM coaching)
+  webcamAlert: WebcamAlert; // legacy local detector / mock
   cameraHealth: { ok: boolean; reason?: string }; // Tejas
   speak: SpeakRequest; // Rohit
   arbiterDecision: ArbiterDecision; // Rohit
@@ -71,7 +81,7 @@ export type Events = {
   speechStarted: { id: string; firstAudibleMs: number }; // Nithila
   speechEnded: { id: string; interrupted: boolean }; // Nithila
   voiceCommand: { kind: 'repeat' | 'mute' | 'unmute'; transcript: string }; // Nithila
-  dataSent: DataSent; // Nithila
+  dataSent: DataSent; // voice (Cartesia), vision (Anthropic), per approved VLM revision
 };
 
 export type EventName = keyof Events;

@@ -35,9 +35,31 @@ function devApi(): Plugin {
           for (const [key, value] of Object.entries(req.headers)) {
             if (typeof value === 'string') headers.set(key, value);
           }
-          // Body-less requests only; the token endpoint is a GET.
+          let body: string | undefined;
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
+            const chunks: Buffer[] = [];
+            let size = 0;
+            for await (const chunk of req) {
+              const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              size += bytes.length;
+              if (size > 800_000) {
+                res.statusCode = 413;
+                res.end();
+                return;
+              }
+              chunks.push(bytes);
+            }
+            body = Buffer.concat(chunks).toString('utf8');
+          }
+          const aborted = new AbortController();
+          req.on('aborted', () => aborted.abort());
+          res.on('close', () => {
+            if (!res.writableEnded) aborted.abort();
+          });
           const request = new Request(`http://${req.headers.host}${req.url}`, {
             method: req.method,
+            body,
+            signal: aborted.signal,
             headers,
           });
           const response = (await handler(request)) as Response;

@@ -1,12 +1,14 @@
 // The arbiter's rules as one pure function: step(state, input, nowMs) returns the next state and
 // the events to emit. No bus, no clock, no timers, so every rule in docs/DESIGN.md is unit-tested
 // in rules.test.ts. The arbiter decides only when something is heard, never what is safe.
+import { validCoachingText } from '../../../shared/coaching.ts';
 import type {
   ArbiterDecision,
   MapCue,
   MapFeatureKind,
   SpeakRequest,
   WebcamAlert,
+  VisionAdvice,
 } from '../../../shared/types.ts';
 
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
@@ -31,7 +33,8 @@ const FALLBACK_CLIPS: Partial<Record<MapFeatureKind, string>> = {
 };
 
 export type Item = {
-  origin: 'cue' | 'alert' | 'repeat' | 'system';
+  origin: 'cue' | 'alert' | 'repeat' | 'system' | 'vision';
+  generated?: boolean;
   sourceId: string;
   dedupeKey?: string; // never spoken twice per trip; repeats and replays bypass it
   alertKind?: WebcamAlert['kind'];
@@ -62,6 +65,7 @@ export type ArbiterState = {
 export type Input =
   | { type: 'cue'; cue: MapCue }
   | { type: 'alert'; alert: WebcamAlert }
+  | { type: 'advice'; advice: VisionAdvice }
   | { type: 'speechEnded'; id: string }
   | { type: 'voice'; kind: 'repeat' | 'mute' | 'unmute' }
   | { type: 'camera'; ok: boolean }
@@ -144,6 +148,38 @@ export function step(
     case 'cue':
       offer(run, cueItem(input.cue));
       break;
+    case 'advice': {
+      const advice = input.advice;
+      if (nowMs > advice.expiresMs || !validCoachingText(advice.text)) {
+        decide(
+          run,
+          advice.id,
+          'dropped',
+          nowMs > advice.expiresMs ? 'expired' : 'invalid coaching',
+        );
+        break;
+      }
+      // Video coaching takes precedence over queued supplementary map reminders.
+      s.queue = s.queue.filter((item) => {
+        if (item.origin !== 'cue' && item.origin !== 'vision') return true;
+        decide(run, item.sourceId, 'dropped', 'superseded by newer video coaching');
+        return false;
+      });
+      offer(run, {
+        origin: 'vision',
+        generated: true,
+        sourceId: advice.id,
+        dedupeKey: `advice:${advice.id}`,
+        text: advice.text,
+        priority: 1,
+        earliestMs: advice.tripMs,
+        expiresMs: advice.expiresMs,
+        gapMs: 1000,
+        why: advice.reason,
+        replayed: false,
+      });
+      break;
+    }
     case 'alert':
       offer(run, alertItem(input.alert));
       break;
@@ -338,7 +374,7 @@ function speak(run: Run, item: Item) {
   s.current = { item, speakId, startedMs: nowMs };
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
-  if (item.origin === 'cue') s.lastCue = item;
+  if (item.origin === 'cue' || item.origin === 'vision') s.lastCue = item;
 
   const request: SpeakRequest = {
     id: speakId,
@@ -347,6 +383,7 @@ function speak(run: Run, item: Item) {
     priority: item.priority,
     expiresMs: item.expiresMs,
   };
+  if (item.generated) request.origin = 'vision';
   if (item.clipKey) request.clipKey = item.clipKey;
   if (item.fallbackClipKey) request.fallbackClipKey = item.fallbackClipKey;
   run.effects.push({ type: 'speak', request });

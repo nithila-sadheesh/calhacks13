@@ -2,14 +2,21 @@
 import { useEvents } from '../../../shared/useEvents.ts';
 import type { Bus } from '../../../shared/types.ts';
 
-const DESTINATIONS = { 'cartesia-tts': 'Sonic', 'cartesia-stt': 'Ink' } as const;
+const DESTINATIONS = {
+  'cartesia-tts': 'Sonic',
+  'cartesia-stt': 'Ink',
+  'anthropic-vision': 'Claude',
+} as const;
 
 export function DataUsePanel({ bus }: { bus: Bus }) {
   const sent = useEvents(bus, 'dataSent');
   return (
     <section className="panel" aria-label="Data use">
       <h2>Data use</h2>
-      <p>Video: stays on this device. Location: not sent. Sent to Cartesia: the lines below.</p>
+      <p>
+        Sampled frames: sent to Anthropic. GPS: not sent. Reminder text and held microphone audio:
+        sent to Cartesia.
+      </p>
       {sent.length === 0 ? (
         <p className="muted">Nothing sent yet.</p>
       ) : (

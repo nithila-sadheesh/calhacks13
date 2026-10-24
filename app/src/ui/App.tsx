@@ -21,10 +21,12 @@ export function App({ bus, modules }: AppProps) {
       <section className="panel">
         <h2>What leaves this device</h2>
         <ul className="privacy">
-          <li>Video frames stay on the device.</li>
+          <li>Sampled video frames are sent to Anthropic Claude for coaching.</li>
           <li>Spoken reminder text is sent to Cartesia Sonic.</li>
           <li>Microphone audio is sent to Cartesia Ink only while push-to-talk is held.</li>
-          <li>The demo uses saved map data, so no location is sent during replay.</li>
+          <li>
+            GPS coordinates are not sent. Visible locations may be recognizable in video frames.
+          </li>
         </ul>
       </section>
       <label className="check">

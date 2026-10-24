@@ -7,7 +7,7 @@ import { type ArbiterState, type Effect, type Input, initialState, step } from '
 
 const TICK_MS = 100;
 
-export function createArbiter(): AppModule {
+export function createArbiter(options: { mapReminders?: boolean } = {}): AppModule {
   let offs: Array<() => void> = [];
   let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -35,7 +35,18 @@ export function createArbiter(): AppModule {
       };
 
       offs = [
-        bus.on('mapCue', (cue) => dispatch({ type: 'cue', cue })),
+        bus.on('mapCue', (cue) => {
+          if (options.mapReminders !== false)
+            dispatch({ type: 'cue', cue: { ...cue, priority: 2 } });
+          else
+            bus.emit('arbiterDecision', {
+              sourceId: cue.id,
+              action: 'dropped',
+              reason: 'video-led mode: map shown for context only',
+              tripMs: clock.nowMs(),
+            });
+        }),
+        bus.on('visionAdvice', (advice) => dispatch({ type: 'advice', advice })),
         bus.on('webcamAlert', (alert) => dispatch({ type: 'alert', alert })),
         bus.on('speechEnded', ({ id }) => dispatch({ type: 'speechEnded', id })),
         bus.on('voiceCommand', ({ kind }) => dispatch({ type: 'voice', kind })),
@@ -59,4 +70,4 @@ function apply(bus: Bus, effect: Effect) {
   else log('arbiter', effect.message, effect.data);
 }
 
-export const arbiterModule = createArbiter();
+export const arbiterModule = createArbiter({ mapReminders: false });

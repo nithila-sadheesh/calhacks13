@@ -2,6 +2,7 @@
 // emits speechEnded synchronously inside `speak`, which exercises the arbiter's inbox.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBus } from '../../../shared/bus.ts';
+import { createMockVision } from '../../../shared/mocks/vision.ts';
 import { mockFactories } from '../../../shared/mocks/index.ts';
 import type { ArbiterDecision, Events, ModuleContext } from '../../../shared/types.ts';
 import { createArbiter } from './index.ts';
@@ -30,7 +31,7 @@ function setup() {
   bus.on('arbiterDecision', (d) => decisions.push(d));
   const modules = [
     mockFactories.map(),
-    mockFactories.vision(),
+    createMockVision({ legacy: true }),
     mockFactories.voice(),
     createArbiter(),
   ];
@@ -57,7 +58,7 @@ describe('arbiter with mocks', () => {
 
     playTo(10000);
     expect(speaks.map((s) => [s.id, s.priority])).toEqual([
-      ['mock-cue-1#1', 1],
+      ['mock-cue-1#1', 2],
       ['mock-alert-1#2', 0],
     ]);
     expect(decisions.map((d) => `${d.sourceId} ${d.action}`)).toEqual([

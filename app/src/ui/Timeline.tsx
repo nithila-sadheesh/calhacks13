@@ -10,6 +10,7 @@ function useTimeline(bus: Bus) {
   const [state, dispatch] = useReducer(timelineReducer, emptyTimeline);
   useEffect(() => {
     const offs = [
+      bus.on('visionAdvice', (payload) => dispatch({ type: 'visionAdvice', payload })),
       bus.on('mapCue', (payload) => dispatch({ type: 'mapCue', payload })),
       bus.on('webcamAlert', (payload) => dispatch({ type: 'webcamAlert', payload })),
       bus.on('speak', (payload) => dispatch({ type: 'speak', payload })),

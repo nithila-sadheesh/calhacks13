@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
+    "api/vision-advice.ts": { "maxDuration": 20 },
     "api/cartesia-token.ts": {
       "maxDuration": 15
     }

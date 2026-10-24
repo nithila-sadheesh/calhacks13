@@ -434,3 +434,54 @@ describe('pause and watchdog', () => {
     expect(h.effects.some((e) => e.type === 'log')).toBe(true);
   });
 });
+
+it('queues generated coaching ahead of map cues and repeats the latest coaching', () => {
+  const advice = {
+    id: 'vlm-1',
+    text: 'Watch for cyclists beside parked cars.',
+    reason: 'Cyclist beside cars.',
+    tripMs: 1000,
+    expiresMs: 11000,
+  };
+  let result = step(initialState(true), { type: 'advice', advice }, 1000);
+  const spoken = result.effects.find((effect) => effect.type === 'speak');
+  expect(spoken).toMatchObject({ request: { origin: 'vision', text: advice.text, priority: 1 } });
+  if (spoken?.type !== 'speak') throw new Error('Expected coaching speech');
+  result = step(result.state, { type: 'speechEnded', id: spoken.request.id }, 2000);
+  result = step(result.state, { type: 'voice', kind: 'repeat' }, 4000);
+  expect(result.effects.find((effect) => effect.type === 'speak')).toMatchObject({
+    request: { origin: 'vision', text: advice.text },
+  });
+});
+
+it('replaces queued old coaching but does not let expired advice discard valid queued work', () => {
+  const advice = {
+    id: 'first',
+    text: 'Scan curb edges for pedestrians.',
+    reason: 'People beside the road.',
+    tripMs: 0,
+    expiresMs: 10000,
+  };
+  let result = step(initialState(false), { type: 'advice', advice }, 0);
+  result = step(
+    result.state,
+    {
+      type: 'advice',
+      advice: { ...advice, id: 'second', text: 'Check mirrors for nearby cyclists.' },
+    },
+    1000,
+  );
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['second']);
+  expect(result.effects).toContainEqual(
+    expect.objectContaining({
+      type: 'decision',
+      decision: expect.objectContaining({ sourceId: 'first', action: 'dropped' }),
+    }),
+  );
+  result = step(
+    result.state,
+    { type: 'advice', advice: { ...advice, id: 'expired', expiresMs: 500 } },
+    1000,
+  );
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['second']);
+});

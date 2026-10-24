@@ -9,7 +9,7 @@ async function startDrive(page: Page, mocks = 'map,vision,voice') {
   const problems: string[] = [];
   page.on('console', (m) => m.type() === 'error' && problems.push(m.text()));
   page.on('pageerror', (e) => problems.push(e.message));
-  await page.goto(`/?mock=${mocks}`);
+  await page.goto(`/?mock=${mocks}&mapSpeech=1`);
   await page.getByRole('checkbox', { name: 'A licensed adult is in the passenger seat.' }).check();
   await page.getByRole('button', { name: 'Load demo drive' }).click();
   await expect(video(page)).toHaveJSProperty('readyState', 4);
@@ -25,12 +25,14 @@ test('setup screen requires the supervisor check', async ({ page }) => {
   await page.goto('/');
   const start = page.getByRole('button', { name: 'Load demo drive' });
   await expect(start).toBeDisabled();
-  await expect(page.getByText('Video frames stay on the device.')).toBeVisible();
+  await expect(
+    page.getByText('Sampled video frames are sent to Anthropic Claude for coaching.'),
+  ).toBeVisible();
   await page.getByRole('checkbox').check();
   await expect(start).toBeEnabled();
 });
 
-test('replay: cue, alert interrupting it, timeline, data use, seek reset', async ({ page }) => {
+test('replay: map cue, queued video coaching, timeline, data use, seek reset', async ({ page }) => {
   const problems = await startDrive(page);
   const captions = page.locator('.captions');
   const timeline = page.getByRole('region', { name: 'Timeline' });
@@ -40,25 +42,24 @@ test('replay: cue, alert interrupting it, timeline, data use, seek reset', async
   await expect(captions).toHaveText('Stop sign ahead. Prepare for a complete stop.', {
     timeout: 6000,
   });
-  await expect(captions).toHaveText('Pedestrian ahead. Stay alert.', { timeout: 4000 });
+  await expect(captions).toHaveText('Scan curb edges for pedestrians.', { timeout: 7000 });
 
   const stopRow = timeline.locator('.timeline-row', { hasText: 'Stop sign' });
   await expect(stopRow).toContainText('mock: stop sign 74 m ahead at 9 m/s');
   await expect(stopRow.locator('.step-spoken')).toContainText('first audible 250 ms');
-  await expect(stopRow.locator('.step-interrupted')).toContainText('preempted by alert');
-  await expect(stopRow.locator('.step-dropped')).toContainText('expired', { timeout: 4000 });
-  await expect(timeline.locator('.timeline-row', { hasText: 'Pedestrian' })).toBeVisible();
+  await expect(timeline.locator('.timeline-row', { hasText: 'Video coaching' })).toBeVisible();
   await expect(dataUse.locator('li')).toHaveCount(2);
   await expect(captions).toHaveText('', { timeout: 4000 });
 
   await seek(page, 1);
+  await play(page);
   await expect(timeline.locator('.timeline-row')).toHaveCount(0);
   await expect(dataUse.locator('li')).toHaveCount(0);
   await expect(timeline.locator('.timeline-row', { hasText: 'Stop sign' })).toBeVisible({
     timeout: 6000,
   });
-  await expect(timeline.locator('.timeline-row', { hasText: 'Pedestrian' })).toBeVisible({
-    timeout: 6000,
+  await expect(timeline.locator('.timeline-row', { hasText: 'Video coaching' })).toBeVisible({
+    timeout: 7000,
   });
 
   expect(problems).toEqual([]);
@@ -125,26 +126,4 @@ test('real voice loads clips and unlocks sound before replay controls are offere
   release();
   await page.getByRole('button', { name: 'Enable replay sound' }).click();
   await expect(video(page)).toHaveJSProperty('controls', true);
-});
-
-test('real vision loads its model and WASM from local assets', async ({ page }) => {
-  const logs: string[] = [];
-  const external: string[] = [];
-  page.on('console', (message) => logs.push(message.text()));
-  page.on('request', (request) => {
-    const url = new URL(request.url());
-    if (url.protocol.startsWith('http') && !['localhost', '127.0.0.1'].includes(url.hostname))
-      external.push(url.origin);
-  });
-  await page.goto('/?mock=map,voice');
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Load demo drive' }).click();
-  await expect
-    .poll(
-      () => logs.some((line) => line.includes('[vision]') && line.includes('detector loaded')),
-      { timeout: 30000 },
-    )
-    .toBe(true);
-  await expect(video(page)).toHaveJSProperty('controls', true);
-  expect(external).toEqual([]);
 });

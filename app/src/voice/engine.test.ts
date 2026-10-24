@@ -243,3 +243,15 @@ it('uses the explicit fallback key only when it matches the approved sentence', 
   expect(s.ended).toHaveBeenCalledWith({ id: 'wrong', interrupted: false });
   s.engine.stop();
 });
+
+it('streams validated VLM coaching but still rejects untagged arbitrary text', () => {
+  const s = setup();
+  s.speak('video', { origin: 'vision', text: 'Watch for cyclists beside parked cars.' });
+  expect(s.send).toHaveBeenCalledTimes(1);
+  s.engine.reset();
+  s.speak('untagged', { text: 'Watch for cyclists beside parked cars.' });
+  expect(s.send).toHaveBeenCalledTimes(1);
+  s.speak('bad', { origin: 'vision', text: 'Go now.' });
+  expect(s.send).toHaveBeenCalledTimes(1);
+  s.engine.stop();
+});
