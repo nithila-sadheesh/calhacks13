@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TripContext } from '../shared/assistant.ts';
-import { createAssistantHandler, DEFLECT, MODEL, UNAVAILABLE, userPrompt } from './assistant.ts';
+import { unsafeReason } from '../shared/safeWording.ts';
+import {
+  ANSWER_EXAMPLES,
+  ANSWER_SYSTEM,
+  createAssistantHandler,
+  DEFLECT,
+  MODEL,
+  UNAVAILABLE,
+  userPrompt,
+} from './assistant.ts';
 
 const context: TripContext = {
   speedMps: 9,
@@ -72,6 +81,11 @@ describe('assistant endpoint', () => {
     });
   });
 
+  it('stays silent when the speech was unclear', async () => {
+    const s = setup({ say: '' });
+    expect(await (await s.post(ask('uh the thing'))).json()).toEqual({});
+  });
+
   it('a refusal becomes a polite fallback line', async () => {
     const s = setup('refusal');
     expect(await (await s.post(ask('something odd'))).json()).toEqual({ text: UNAVAILABLE });
@@ -115,6 +129,20 @@ describe('assistant endpoint', () => {
     const prompt = JSON.stringify(s.create.mock.calls[0]![0]);
     expect(prompt).not.toContain('37.87');
     expect(prompt).not.toContain('-122.27');
+  });
+
+  it('sends the rules and examples together for answers, and every example line is safe to speak', async () => {
+    const s = setup({ say: 'ok' });
+    await s.post(ask('what does a yield sign mean'));
+    const body = s.create.mock.calls[0]![0] as { system: string };
+    expect(body.system).toContain(ANSWER_SYSTEM);
+    expect(body.system).toContain(ANSWER_EXAMPLES);
+
+    const lines = [...ANSWER_EXAMPLES.matchAll(/^\{"say": "([^"]*)", "action"/gm)].map(
+      (m) => m[1]!,
+    );
+    expect(lines.length).toBeGreaterThan(70);
+    for (const line of lines.filter(Boolean)) expect(unsafeReason(line), line).toBeUndefined();
   });
 
   it('frames the question as transcribed speech after the context', () => {

@@ -86,6 +86,17 @@ describe('assistant module', () => {
     s.module.stop();
   });
 
+  it('posts a reply with nothing to say when the server stays silent', async () => {
+    const s = setup(() => ok({}));
+    await s.module.start(s.ctx);
+    s.ask('uh the thing');
+    await settle();
+    expect(s.of('assistantReply')[0]).toMatchObject({ queryId: 'query-1' });
+    expect(s.of('assistantReply')[0]?.text).toBeUndefined();
+    expect(s.of('assistantReply')[0]?.action).toBeUndefined();
+    s.module.stop();
+  });
+
   it('says it cannot answer when the request fails or the wording is unsafe', async () => {
     const failing = setup(() => Promise.reject(new Error('offline')));
     await failing.module.start(failing.ctx);

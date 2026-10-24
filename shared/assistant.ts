@@ -92,5 +92,6 @@ export function parseAssistantResponse(v: unknown): AssistantResponse | undefine
   if (text) response.text = text;
   const action = ACTIONS.find((a) => a === v.action);
   if (action) response.action = action;
-  return response.text || response.action ? response : undefined;
+  // An empty object is deliberate silence (unclear speech); only a non-object is malformed.
+  return response;
 }
