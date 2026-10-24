@@ -14,20 +14,28 @@ export function App({ bus, modules }: AppProps) {
   return (
     <main className="setup">
       <h1>Learner Co-Pilot</h1>
-      <p>Supervised practice only. This is not automated driving or a navigation system.</p>
-      <p>
-        Video is analysed on this device and never uploaded. The microphone is used only while
-        push-to-talk is held.
+      <p className="lede">
+        Supervised practice only. A licensed driver supervises; this is not automated driving or a
+        navigation system.
       </p>
-      <label>
+      <section className="panel">
+        <h2>What leaves this device</h2>
+        <ul className="privacy">
+          <li>Video frames stay on the device.</li>
+          <li>Spoken reminder text is sent to Cartesia Sonic.</li>
+          <li>Microphone audio is sent to Cartesia Ink only while push-to-talk is held.</li>
+          <li>The demo uses saved map data, so no location is sent during replay.</li>
+        </ul>
+      </section>
+      <label className="check">
         <input
           type="checkbox"
           checked={confirmed}
           onChange={(e) => setConfirmed(e.target.checked)}
-        />{' '}
+        />
         A licensed adult is in the passenger seat.
       </label>
-      <button disabled={!confirmed} onClick={() => setStarted(true)}>
+      <button className="primary" disabled={!confirmed} onClick={() => setStarted(true)}>
         Load demo drive
       </button>
     </main>

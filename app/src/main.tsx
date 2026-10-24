@@ -18,7 +18,8 @@ const real: AppModule[] = [mapModule, visionModule, voiceModule, arbiterModule];
 const modules = real.map((m) => (mocked.has(m.name) ? mockFactories[m.name]() : m));
 
 const bus = createBus();
-bus.onAny((type, payload) => log('bus', type, payload));
+// position arrives at ~10 Hz and would drown out everything else.
+bus.onAny((type, payload) => type !== 'position' && log('bus', type, payload));
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root');
