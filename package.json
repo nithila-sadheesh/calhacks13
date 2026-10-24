@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "e2e": "playwright test",
     "route": "node --experimental-strip-types scripts/route/fetchRoute.ts",
     "track": "node --experimental-strip-types scripts/track/gpxToTrack.ts",
     "clips": "node --experimental-strip-types scripts/voice/generateClips.ts"
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
