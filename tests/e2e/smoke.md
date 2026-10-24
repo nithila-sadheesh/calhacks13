@@ -11,7 +11,7 @@ Prerequisites:
 
 - [ ] Git LFS video is actual playable media, not a pointer; matching GPS/features and two sync landmarks are available
 - [ ] With real voice, wait for startup and click **Enable replay sound**; controls appear only after sound unlocks
-- [ ] Run `?mock=vision` for the three-module integration; scripted mocks are not real-drive acceptance
+- [ ] Use `/` for all four real modules; use `?mock=vision` only to isolate integration failures, never as detection evidence
 
 By hand, with the real modules (drop a module from `?mock=` once it passes its owner's checks):
 
