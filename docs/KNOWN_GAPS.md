@@ -65,3 +65,9 @@ Four Chrome checks pass: supervisor setup, implemented local token routing, dela
 ## Existing contract additions retained
 
 Rohit’s branch adds optional `SpeakRequest.fallbackClipKey`, optional `ArbiterDecision.speakId`, and cause-first `onAny` listener ordering. Integration adds no new shared fields or dependencies. Further shared contract changes require team approval.
+
+## Recorded-clip inference diagnostic
+
+`npm run e2e -- tests/e2e/videoInference.spec.ts` runs the actual local detector, tracker and alert rules over recorded frames sampled every 125 ms. On the current 11.28-second video: 90 frames processed, 148 total detections, 74 person detections, maximum person confidence 0.6973, and only 3 frames meeting the pedestrian confidence/forward-region criteria. No alert fired because the 4-of-5 rule was never met. These are repeated frame detections, not counts of distinct people. This diagnostic uses no audio/network transport, leaves following-distance disabled and does not establish GPS alignment or holdout performance.
+
+Video currently supplies fixed pedestrian warnings, with following-distance as an intentionally disabled optional fallback. It does not generate arbitrary scene descriptions or driving instructions. Cartesia receives reminder text for speech, never video. Use the root URL with no `mock=vision` when testing actual detection. Choose suitable demo footage and validate/tune with the owner rather than forcing alerts or inserting scripted timestamps.
