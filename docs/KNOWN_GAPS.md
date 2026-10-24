@@ -1,74 +1,58 @@
-# Known gaps and things to know
+# Integration status and handoff
 
-Current state: Rohit’s shell and Nithila’s voice implementation are combined on `integration`. Combined deterministic tests cover real arbiter/voice interruption, offline fallback, repeat, pause and seek. Live audio/microphone acceptance still needs the demo laptop. Map and vision remain stubs.
+Current branch: `integration`. Rohit’s replay/arbiter/shell, Nithila’s voice/API/audio, and Jeev’s map/route tooling are merged. Tejas’s vision module remains a stub. No real frame-based detection is claimed.
 
-## Missing pieces
+## Requirements against the design
 
-| Gap | Owner | Notes |
+| Requirement | Status | Evidence or remaining work |
 | --- | --- | --- |
-| Real drive video not recorded yet | whole team (records), Rohit (commits) | `fixtures/demo-drive/video.mp4` is a 60 s H.264 test pattern with an on-screen seconds counter, committed through Git LFS. It has no pedestrians or road features, so only mocks produce events on it. Replace it with the real drive at the end and re-run `npm run e2e` and `tests/e2e/smoke.md`. |
-| Map and vision remain stubs | Jeev, Tejas | Voice and arbiter are implemented. Real route cues and frame-based alerts await their owners; use explicit map/vision mocks for integration testing. |
-| Drive fixtures are placeholders | Jeev | Track, route and features are sample data. Six generated PCM clips and a populated audio manifest are supplied by Nithila. |
-| Turn cues may not need a `Route` change | Jeev | `features.json` already supports `turnLeft`/`turnRight` with `street` and `routeDistM`. Confirm before asking for a `Route` contract change. |
-| Voice behavior on mute and pause | Rohit, Nithila | Arbiter lets the current line finish on mute. Voice resets audio and cancels microphone capture on pause/end/reset, emitting speechEnded for active playback. Verify the combined resume behavior in Chrome. |
-| Interrupted cues rarely get replayed | Jeev | The arbiter replays an interrupted cue once if it is still before `expiresMs` after the alert ends (about 2 s for the alert line, plus a 1 s gap). With the design's 3 s "drop after" windows, most interrupted cues expire first and the timeline shows "dropped: expired". If the demo should show a replay, cues need a longer `expiresMs`. |
-| No Spanish, stretch or live-camera work | team | Chosen at Checkpoint 2. |
+| Replay master clock, 1x lock, seek reset | Implemented; footage acceptance pending | Unit coverage; full browser replay needs the LFS video |
+| Arbiter priority, interruption, expiry, dedupe, spacing, mute/repeat | Implemented | Rule tests and real map/arbiter/voice integration test with simulated audio/transport |
+| GPS interpolation, route progress, cue generation and Upcoming panel | Implemented; real-drive acceptance pending | Map tests pass; current track/features remain placeholders |
+| Sonic streaming, local cancellation, fallback, bundled warnings | Implemented; live acceptance pending | Voice tests and combined pipeline coverage; six generated PCM files shipped |
+| Ink push-to-talk, command matching, privacy events | Implemented; live recognition pending | Simulated capture/transport tests; Chrome mic and noisy-room acceptance still required |
+| Captions, timeline, data-use panel, supervisor check | Implemented; full replay acceptance pending | Reducer tests and Chrome setup check |
+| Module startup and browser sound readiness | Implemented | Playback controls wait for modules and sound enable; Chrome readiness test passes |
+| Token endpoint and local routing | Implemented; deployed acceptance pending | Dev and production use `api/cartesia-token.ts`; Chrome cross-origin rejection test passes |
+| Real frame-based alerts, camera health and overlay | Pending Tejas | Keep vision mocked explicitly until his branch is ready |
+| Track/video sync and 2–3 real route cues | Blocked by missing validated drive fixtures | Empty annotations cause two acceptance checks to skip |
+| Full real-drive demo and holdout report | Pending all modules and recorded evidence | No full end-to-end acceptance claim |
 
-## Arbiter behaviour other modules rely on
+## Remaining blockers
 
-Rules: `app/src/arbiter/rules.ts`, one test per rule in `rules.test.ts`.
+- **Video asset:** Jeev’s merge replaced the old test-pattern pointer with a different LFS pointer (30,459,712 bytes). Its contents, codec and alignment have not been verified. This checkout has only the pointer and no Git LFS executable. On the demo machine install Git LFS, run `git lfs pull --include=fixtures/demo-drive/video.mp4`, then inspect/play the actual asset. Do not substitute generated footage to pass replay tests.
+- **Jeev’s fixtures:** committed track has two points spanning 10 seconds; features contain one explicitly labelled placeholder stop sign. Obtain the matching GPX and run the existing track/route scripts. Verify curated changes, add two landmark annotations and expected cues using `app/src/map/NOTES.md`, then run the acceptance tests. Runtime never loads annotations. Do not invent coordinates or sync evidence.
+- **Tejas:** deliver real frame processing, tracking, alert debounce/expiry, camera health, overlay and holdout report. Use the existing shared video and clock, clear on reset, and publish only `webcamAlert`/`cameraHealth`. No inference or footage uploads.
+- **Live media/deployment:** verify Sonic, local interruption, Ink repeat/mute/unmute, offline clips, measured latency and pause/seek on the demo laptop in Chrome. Follow Nithila’s `app/src/voice/DEPLOYMENT.md` for Vercel and server-side key setup. No deployed endpoint or live microphone success is asserted here.
+- **Fallback captions:** the shared request carries the full route reminder while network fallback plays its approved shorter clip. Captions currently retain request text per the design contract. Exact fallback-caption synchronization needs an agreed voice-status contract before changing shared fields.
 
-- **Speak ids are unique per spoken line**, `${sourceId}#${n}`, and never repeat across seeks. A replayed or repeated cue gets a new id. `speechStarted` and `speechEnded` must echo the `speak` id.
-- **One line at a time.** The next line starts only after `speechEnded` for the current id. If none arrives within the estimated length (14 characters/s) plus 4 s of trip time, the arbiter assumes the line ended and logs it. Voice must still always emit `speechEnded`.
-- **Priority 0 interrupts by itself.** The arbiter emits the alert's `speak` at once and logs the old line as `interrupted`. Voice cuts the audio and emits `speechEnded { interrupted: true }` for the old id; the arbiter ignores that late event.
-- **Spacing:** a fresh cue starts at least 4 s after the last line ended. Replays and repeats wait 1 s. Alerts never wait.
-- **Repeat** re-speaks the last spoken route cue (never an alert), even while muted, because the user asked.
-- **Camera down** speaks the camera-paused clip once per trip.
+## Module connection rules
 
-## Design limits of the scaffold
+- Real map → `position`/`mapCue`; arbiter → `speak`/`arbiterDecision`; voice → `speechStarted`/`speechEnded`/`voiceCommand`/`dataSent`. Speech lifecycle events echo the unique `speak.id`.
+- Shipped clip keys: `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. Tejas must use `pedestrianNearby`, not `pedestrian`.
+- Arbiter supplies `fallbackClipKey` for route cues. Voice accepts it only if it matches the approved fallback for the sentence; requests without it retain text-based fallback for compatibility. Traffic lights have no bundled fallback.
+- Dev Vite loads the same `api/cartesia-token.ts` entry point as Vercel, with server environment variables. `api/` is included in typechecking. Keys stay out of client assets and logs.
+- Panels subscribe before modules start. Playback remains unavailable until startup completes; with real voice, click **Enable replay sound** before video controls appear. Voice mock mode renders no real mic/audio controls.
+- Trip time comes from the video clock only. Map clears through `clock.onReset`; arbiter and voice clear on `tripReset`. Voice also cancels playback/capture on pause and end.
+- Arbiter lets a line finish on mute, suppresses later route cues, and still permits warnings and explicit repeat. Verify this behavior live.
+- An interrupted route cue is replayed once only while valid. Short map expiry windows can legitimately result in an expired drop after a warning; do not extend them merely to force a demo replay.
+- `useEvents` retains events since reset; do not use it for high-rate position history. UpcomingPanel uses the map-owned snapshot store.
+- Fixtures are served at `/demo-drive/...` and `/audio/...`. All map queries run in offline preparation scripts, never during replay.
 
-- **Reset is driven by `seeked`.** Any seek, including the video restarting after it ends, emits `tripReset`. Your module must clear its state on it. Do not assume it fires once.
-- **Panels mount before modules start.** `Drive.tsx` renders every panel first, then starts the modules, then publishes the current `tripState` (`idle` at the start). Panels see events emitted inside `start()`.
-- **The `useEvents` hook keeps events since the last `tripReset`.** It is meant for small panels. Do not use it for high-rate events such as `position` at 10 Hz. It grows without limit.
-- **The video is muted** in `Drive.tsx` so dashcam audio does not overlap Cartesia. Change this only with Rohit.
-- **Playback is locked to 1x** and the speed menu is hidden. The judged run is real time only.
-- **The debug log skips `position`** so the console stays readable. Every other event is logged, in the order it was emitted.
-- **Mocks are scripted on purpose.** The map and vision mocks fire at fixed times (3 s and 5 s). Real modules must never do this (AGENTS.md rule 6).
+## How to integrate vision next
 
-## Tooling notes
+1. Compare Tejas’s branch against its merge base, especially shared-file edits and clip keys; preserve the integrated contracts.
+2. Merge on `integration`, resolve conflicts by behavior, and retain the module/panel entry points. Do not introduce cross-module imports.
+3. Start with `?mock=vision` (real map, arbiter and voice). Use `?mock=map,vision` only for the explicitly scripted test flow while real fixtures are unavailable. Mock cues and alerts are not detection evidence.
+4. Remove the vision mock once its owner’s checks pass. Verify actual detections drive alerts, camera stalls announce once, and seek clears tracker/cooldowns and all downstream state.
+5. Run required checks and `tests/e2e/smoke.md`, then rehearse the full 1x real-drive script before any merge to main.
 
-- **Versions are new.** npm resolved React 19, TypeScript 6, ESLint 10, Vite 8 and Vitest 5. Decided: stay on React 19 (AGENTS.md updated).
-- **End-to-end tests** (`npm run e2e`) use Playwright with installed Chrome (`channel: 'chrome'`), because Playwright's bundled Chromium cannot play H.264. They start their own dev server on port 5174.
-- **Git LFS** is required to get the video: run `git lfs install` once per machine before cloning or pulling.
-- **Node 22.6 or newer** is required. `npm run route`, `track` and `clips` run `.ts` scripts through Node's built-in type stripping, so scripts cannot use `enum`, `namespace` or parameter properties, and imports need explicit `.ts` extensions. `erasableSyntaxOnly` in `tsconfig.json` catches this.
-- **ESLint enforces AGENTS.md rules.** Importing another module's folder from `app/src/{map,vision,voice,arbiter}`, using `Date.now()`, and using bare `console.*` are errors. Only `shared/log.ts`, `scripts/`, `server/` and `tests/` may print. Do not weaken the rules to get past an error; fix the code, or ask Rohit.
-- **Line endings are LF** (`.gitattributes`). Run `npm run format` before committing. Prettier ignores `*.md`, `docs/` and `fixtures/`.
-- **`fixtures/` is Vite's public directory.** Files are served at `/demo-drive/...` and `/audio/...`, not `/fixtures/...`. `publicDir` copies the whole folder into `dist`, including the video.
-- **`annotations.json` is never loaded by the app.** `loadFixtures()` skips it on purpose. Tests may read it from disk.
-- **Dependencies:** `@mediapipe/tasks-vision` (Tejas) and `@playwright/test` (dev, Rohit). Anything else needs Rohit's approval, since he edits `package.json` and the lockfile.
+## Verification
 
-## Contract changes
+Typecheck, lint and production build pass. Unit/integration suite: **206 passed, 2 skipped**. The skipped tests need real landmark and expected-cue annotations. Combined tests exercise both mock and real map with real arbiter/voice, simulated audio/network, offline fallback, interruption, repeat, pause and seek reset. Synthetic route fixtures exist only in tests.
 
-The "contract" is the set of shared definitions all four modules build against: `shared/types.ts` (every event and its payload, the fixture formats, `AppModule` and `ModuleContext`), `shared/bus.ts`, and `shared/mocks/`. It is frozen so that four people working in parallel cannot drift apart. If one module adds a field the others do not know about, they stop fitting together, and nobody finds out until integration.
+Three Chrome checks pass: supervisor setup, implemented local token routing, and delayed voice-loading/sound-unlock gating. Four full replay checks remain blocked by the LFS pointer instead of playable video; rerun `npm run e2e` after restoring the asset. Browser sound-context unlocking does not prove audible speaker output or microphone recognition.
 
-Only Rohit edits these files, and only with team approval. If you need a change, write a short request (file, change, reason) and send it to Rohit. Do not work around the contract with a cast, an extra field or a side channel.
+## Existing contract additions retained
 
-Changes made on `rohit/shell` (all additive; nothing existing changed meaning):
-
-| Change | Why | Who is affected |
-| --- | --- | --- |
-| `SpeakRequest.fallbackClipKey?: string` | The arbiter knows the cue's feature kind; voice does not. Voice plays this clip if streaming fails or is slow, instead of parsing the text. | Nithila: read it in the network fallback. |
-| `ArbiterDecision.speakId?: string` (on `spoken` and `interrupted`) | Exact join of a decision to its `speechStarted` latency, even when a cue is spoken twice. | Nobody else publishes it. |
-| `bus.onAny` listeners run before per-type listeners | The debug log now shows an event before any events its listeners emit, so the log reads in cause-and-effect order. | No module uses `onAny` for logic. |
-| Mock arbiter sets `speakId` | Matches the real arbiter. | Nobody. |
-
-## Integration handoff
-
-- Local Vite API routing loads `api/cartesia-token.ts`, the same entry point used by Vercel. `api/` is included in typechecking. No new shared event fields or dependencies were added.
-- Canonical bundled keys are `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. The vision mock and arbiter now match the shipped manifest. Tejas must use `pedestrianNearby` for the pedestrian alert clip.
-- Use `?mock=map,vision` to exercise the real arbiter and voice while the unfinished modules remain stubs. Wait for voice readiness and click **Enable sound** before playback. Sonic/Ink require a server-side Cartesia key; preloaded clips can play offline.
-- Voice currently chooses route fallback by approved text; the arbiter also supplies the matching `fallbackClipKey`. Traffic-light reminders have no bundled fallback.
-- Map/vision implementation and real drive fixtures remain assigned to Jeev/Tejas. Replace one mock at a time, verify reset behavior and event ownership, then run the full smoke checklist.
-- Remaining acceptance: real Chrome speaker/mic behavior, live Ink recognition, Wi-Fi-off playback, deployed token endpoint, real frame-based alerts, track sync and full real-drive replay. Automated audio doubles do not prove audible output.
-
-Verification on the integration checkout: typecheck, lint, build and 119 unit/integration tests pass. Chrome setup and token-route tests pass; four replay tests fail at video readiness because the checkout contains only the LFS pointer and Git LFS is unavailable. Restore the tracked video with Git LFS and rerun `npm run e2e`; no replacement footage was generated.
+Rohit’s branch adds optional `SpeakRequest.fallbackClipKey`, optional `ArbiterDecision.speakId`, and cause-first `onAny` listener ordering. Integration adds no new shared fields or dependencies. Further shared contract changes require team approval.

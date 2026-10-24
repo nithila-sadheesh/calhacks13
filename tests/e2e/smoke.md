@@ -7,6 +7,12 @@ Automated first:
 - [ ] `npm run typecheck`, `npm run lint`, `npm test` pass
 - [ ] `npm run e2e` passes (setup check, captions, timeline, data use, seek reset, pause, 1x lock)
 
+Prerequisites:
+
+- [ ] Git LFS video is actual playable media, not a pointer; matching GPS/features and two sync landmarks are available
+- [ ] With real voice, wait for startup and click **Enable replay sound**; controls appear only after sound unlocks
+- [ ] Run `?mock=vision` for the three-module integration; scripted mocks are not real-drive acceptance
+
 By hand, with the real modules (drop a module from `?mock=` once it passes its owner's checks):
 
 - [ ] Setup screen: Load stays disabled until the supervisor box is ticked; privacy statement is shown
