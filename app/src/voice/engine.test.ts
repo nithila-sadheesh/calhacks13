@@ -230,3 +230,16 @@ describe('voice playback and fallback', () => {
     expect(s.ended).toHaveBeenCalledWith({ id: 'route', interrupted: false });
   });
 });
+
+it('uses the explicit fallback key only when it matches the approved sentence', () => {
+  const s = setup();
+  s.speak('correct', { fallbackClipKey: 'stopSign' });
+  vi.advanceTimersByTime(1500);
+  expect(s.nodes).toHaveLength(1);
+  s.engine.reset();
+  s.speak('wrong', { fallbackClipKey: 'turn' });
+  vi.advanceTimersByTime(1500);
+  expect(s.nodes).toHaveLength(1);
+  expect(s.ended).toHaveBeenCalledWith({ id: 'wrong', interrupted: false });
+  s.engine.stop();
+});

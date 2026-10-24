@@ -103,3 +103,26 @@ test('local token route reaches the production handler and rejects cross-origin 
   expect(response.headers()['cache-control']).toBe('no-store');
   expect(await response.json()).toEqual({ error: 'Cross-origin token requests are not allowed.' });
 });
+
+test('real voice loads clips and unlocks sound before replay controls are offered', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/audio/manifest.json', async (route) => {
+    await gate;
+    await route.fulfill({ json: {} });
+  });
+  await page.goto('/?mock=map,vision');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Load demo drive' }).click();
+  await expect(
+    page.getByRole('status', { name: '' }).filter({ hasText: 'Loading drive modules' }),
+  ).toBeVisible();
+  await expect(video(page)).toHaveJSProperty('controls', false);
+  release();
+  await page.getByRole('button', { name: 'Enable replay sound' }).click();
+  await expect(video(page)).toHaveJSProperty('controls', true);
+});

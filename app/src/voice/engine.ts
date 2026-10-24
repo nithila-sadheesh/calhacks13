@@ -66,7 +66,12 @@ export function createVoiceEngine(options: {
       finish(item, false);
       return;
     }
-    const key = fallbackKey(item.request.text);
+    const expectedKey = fallbackKey(item.request.text);
+    // Only the approved fallback for this sentence may be selected by a request.
+    const key =
+      item.request.fallbackClipKey === undefined || item.request.fallbackClipKey === expectedKey
+        ? expectedKey
+        : undefined;
     const samples = key && clips.get(key);
     if (!samples) {
       finish(item, false);
