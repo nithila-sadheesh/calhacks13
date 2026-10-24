@@ -13,6 +13,7 @@ import { createFrameCapture } from './capture.ts';
 import { coachingStore } from './coachingStore.ts';
 
 export const SAMPLE_MS = 1000;
+export const INITIAL_SAMPLE_MS = 250;
 export const ANALYSIS_INTERVAL_MS = 3000;
 export const ADVICE_TTL_MS = 10_000;
 export const MAX_RESPONSE_AGE_MS = 8000;
@@ -80,7 +81,8 @@ export function createVisionModule(
       const tick = () => {
         if (stopped || ctx.video.paused || ctx.video.ended) return;
         const tripMs = ctx.clock.nowMs();
-        if (lastSample !== undefined && tripMs - lastSample < SAMPLE_MS) return;
+        const interval = frames.length < 2 ? INITIAL_SAMPLE_MS : SAMPLE_MS;
+        if (lastSample !== undefined && tripMs - lastSample < interval) return;
         let frame: VideoFrame | undefined;
         try {
           frame = capture(ctx.video, tripMs);

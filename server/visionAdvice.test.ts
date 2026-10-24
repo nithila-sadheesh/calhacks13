@@ -38,11 +38,16 @@ it('sends only validated frames to Anthropic and returns validated JSON', async 
   expect(url).toBe('https://api.anthropic.com/v1/messages');
   const sent = JSON.parse(String(options?.body)) as {
     model: string;
-    output_config: unknown;
+    thinking?: { type: string };
+    system: Array<{ type: string; cache_control?: { type: string } }>;
+    output_config: { effort?: string };
     messages: unknown[];
   };
   expect(sent.model).toBe('claude-sonnet-5-5');
-  expect(sent.output_config).toBeDefined();
+  expect(sent.output_config.effort).toBe('low');
+  expect(sent.thinking?.type).toBe('between_tools');
+  expect(sent.system[0]?.cache_control?.type).toBe('ephemeral');
+  expect(sent.system[1]?.cache_control).toBeUndefined();
   expect(JSON.stringify(sent)).not.toContain('test-only-key');
 });
 it('rejects invalid, oversized and cross-origin input before contacting the model', async () => {
@@ -94,4 +99,27 @@ it('limits request bursts and resets the warm-instance window', async () => {
   expect((await handler(request())).status).toBe(429);
   now = 60_001;
   expect((await handler(request())).status).toBe(200);
+});
+
+it('does not apply Sonnet-specific thinking options to an overridden model', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(
+      Response.json({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(advice) }],
+      }),
+    );
+  const handler = createVisionAdviceHandler({
+    getKey: () => 'test-only-key',
+    getModel: () => 'claude-haiku-5-5',
+    fetcher,
+  });
+  expect((await handler(request())).status).toBe(200);
+  const sent = JSON.parse(String(fetcher.mock.calls[0]![1]?.body)) as {
+    thinking?: unknown;
+    output_config: { effort?: string };
+  };
+  expect(sent.thinking).toBeUndefined();
+  expect(sent.output_config.effort).toBeUndefined();
 });

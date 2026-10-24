@@ -103,6 +103,8 @@ export function createVisionAdviceHandler(options: {
         type: 'text',
         text: `Previous model observations (not verified facts; uncertainty must be preserved): ${JSON.stringify(input.sceneMemory ?? [])}. Recent suggestions: ${JSON.stringify(input.recentAdvice)}. Analyze the current scene.`,
       });
+      const model = options.getModel?.() || 'claude-sonnet-5-5';
+      const fastSonnet = model === 'claude-sonnet-5-5';
       const response = await fetcher('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -112,11 +114,21 @@ export function createVisionAdviceHandler(options: {
         },
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(12_000)]),
         body: JSON.stringify({
-          model: options.getModel?.() || 'claude-sonnet-5-5',
+          model,
+          ...(fastSonnet ? { thinking: { type: 'between_tools' } } : {}),
           max_tokens: 700,
-          system: `${COACHING_PROMPT}\nServer-configured jurisdiction: ${options.getRegion?.() || 'unknown; do not assign vehicle priority using California rules'}.`,
+          system: [
+            { type: 'text', text: COACHING_PROMPT, cache_control: { type: 'ephemeral' } },
+            {
+              type: 'text',
+              text: `Server-configured jurisdiction: ${options.getRegion?.() || 'unknown; do not assign vehicle priority using California rules'}.`,
+            },
+          ],
           messages: [{ role: 'user', content }],
-          output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+          output_config: {
+            ...(fastSonnet ? { effort: 'low' } : {}),
+            format: { type: 'json_schema', schema: SCHEMA },
+          },
         }),
       });
       if (!response.ok)

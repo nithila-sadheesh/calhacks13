@@ -125,3 +125,18 @@ it('passes timestamped observations to the next analysis and clears them on seek
     s.module.stop();
   }
 });
+
+it('starts the opening analysis after two closely spaced frames', async () => {
+  const s = setup();
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(500);
+    expect(s.analyze).toHaveBeenCalledTimes(1);
+    const frames = s.analyze.mock.calls[0]![0].frames as Array<{ tripMs: number }>;
+    expect(frames).toHaveLength(2);
+    expect(frames[1]!.tripMs - frames[0]!.tripMs).toBeGreaterThanOrEqual(250);
+    expect(frames[1]!.tripMs).toBeLessThan(1000);
+  } finally {
+    s.module.stop();
+  }
+});
