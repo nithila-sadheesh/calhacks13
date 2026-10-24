@@ -1,7 +1,55 @@
 // VLM wire format and validation shared by the browser and server.
 export type VideoFrame = { tripMs: number; jpeg: string };
-export type CoachingRequest = { frames: VideoFrame[]; recentAdvice: string[] };
-export type CoachingResponse = { shouldSpeak: boolean; message: string; reason: string };
+export type SceneMemory = { tripMs: number; observations: string[]; uncertainties: string[] };
+export type CoachingRequest = {
+  frames: VideoFrame[];
+  recentAdvice: string[];
+  sceneMemory?: SceneMemory[];
+};
+export type CoachingResponse = {
+  shouldSpeak: boolean;
+  message: string;
+  reason: string;
+  observations?: string[];
+  uncertainties?: string[];
+  coachingPoint?: string;
+  sceneChanged?: boolean;
+};
+export const SCENE_MEMORY_MS = 20_000;
+const cleanText = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length <= max && !hasControl(value) && !/[<>]/.test(value);
+function factList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 3 &&
+    value.every((item) => cleanText(item, 160) && item.trim().length > 0)
+  );
+}
+export function parseSceneMemory(value: unknown, newestTripMs: number): SceneMemory[] | undefined {
+  if (!Array.isArray(value) || value.length > 4) return;
+  const result: SceneMemory[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return;
+    const item = entry as Record<string, unknown>;
+    if (
+      typeof item.tripMs !== 'number' ||
+      !Number.isFinite(item.tripMs) ||
+      item.tripMs < 0 ||
+      item.tripMs > newestTripMs ||
+      newestTripMs - item.tripMs > SCENE_MEMORY_MS ||
+      !factList(item.observations) ||
+      !factList(item.uncertainties)
+    )
+      return;
+    if (result.length && item.tripMs <= result[result.length - 1]!.tripMs) return;
+    result.push({
+      tripMs: item.tripMs,
+      observations: item.observations,
+      uncertainties: item.uncertainties,
+    });
+  }
+  return result;
+}
 export const MAX_COACHING_BODY_BYTES = 800_000;
 export const MAX_ADVICE_CHARS = 180;
 
@@ -35,11 +83,28 @@ export function parseCoachingResponse(value: unknown): CoachingResponse | undefi
   )
     return;
   if (item.shouldSpeak ? !validCoachingText(item.message) : item.message !== '') return;
-  return {
+  const result: CoachingResponse = {
     shouldSpeak: item.shouldSpeak,
     message: item.message.trim(),
     reason: item.reason.trim(),
   };
+  if (
+    ['observations', 'uncertainties', 'coachingPoint', 'sceneChanged'].some((key) => key in item)
+  ) {
+    if (
+      !factList(item.observations) ||
+      !factList(item.uncertainties) ||
+      !cleanText(item.coachingPoint, 180) ||
+      typeof item.sceneChanged !== 'boolean'
+    )
+      return;
+    if (item.shouldSpeak && (!item.observations.length || !item.coachingPoint.trim())) return;
+    result.observations = item.observations;
+    result.uncertainties = item.uncertainties;
+    result.coachingPoint = item.coachingPoint;
+    result.sceneChanged = item.sceneChanged;
+  }
+  return result;
 }
 
 export function parseCoachingRequest(value: unknown): CoachingRequest | undefined {
@@ -70,7 +135,13 @@ export function parseCoachingRequest(value: unknown): CoachingRequest | undefine
     frames.push({ tripMs: f.tripMs, jpeg: f.jpeg });
   }
   if (!item.recentAdvice.every(validCoachingText)) return;
-  return { frames, recentAdvice: item.recentAdvice as string[] };
+  const result: CoachingRequest = { frames, recentAdvice: item.recentAdvice as string[] };
+  if (item.sceneMemory !== undefined) {
+    const memory = parseSceneMemory(item.sceneMemory, frames[frames.length - 1]!.tripMs);
+    if (!memory) return;
+    result.sceneMemory = memory;
+  }
+  return result;
 }
 
 export function adviceKey(message: string): string {

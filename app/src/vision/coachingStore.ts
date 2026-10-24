@@ -1,4 +1,8 @@
 export type CoachingSnapshot = {
+  observations?: string[];
+  uncertainties?: string[];
+  coachingPoint?: string;
+  memoryEntries?: number;
   status: 'idle' | 'collecting' | 'analyzing' | 'ready' | 'error';
   message?: string;
   reason?: string;

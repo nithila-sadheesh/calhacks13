@@ -5,7 +5,10 @@ import {
   type CoachingRequest,
   type CoachingResponse,
   type VideoFrame,
+  type SceneMemory,
+  SCENE_MEMORY_MS,
 } from '../../../shared/coaching.ts';
+import { rememberScene, selectCoachingFrames } from './sceneMemory.ts';
 import { createFrameCapture } from './capture.ts';
 import { coachingStore } from './coachingStore.ts';
 
@@ -49,6 +52,7 @@ export function createVisionModule(
       const capture = options.capture ?? createFrameCapture();
       const request = options.analyze ?? analyze;
       let frames: VideoFrame[] = [];
+      let sceneMemory: SceneMemory[] = [];
       let lastSample: number | undefined;
       let lastRequest = -Infinity;
       let controller: AbortController | undefined;
@@ -61,6 +65,7 @@ export function createVisionModule(
         controller?.abort();
         controller = undefined;
         frames = [];
+        sceneMemory = [];
         lastSample = undefined;
         lastRequest = -Infinity;
         recent.clear();
@@ -88,7 +93,10 @@ export function createVisionModule(
           return;
         }
         lastSample = tripMs;
-        frames = [...frames, frame].slice(-3);
+        frames = [
+          ...frames.filter((previous) => tripMs - previous.tripMs <= SCENE_MEMORY_MS),
+          frame,
+        ].slice(-21);
         if (controller || frames.length < 2 || tripMs - lastRequest < ANALYSIS_INTERVAL_MS) {
           if (!controller)
             coachingStore.set({
@@ -97,7 +105,8 @@ export function createVisionModule(
             });
           return;
         }
-        const batch = frames.slice();
+        const batch = selectCoachingFrames(frames);
+        sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
         const mine = version;
         const abort = new AbortController();
         controller = abort;
@@ -108,6 +117,7 @@ export function createVisionModule(
           if (tripMs - value.tripMs >= DUPLICATE_WINDOW_MS) recent.delete(key);
         const input = {
           frames: batch,
+          sceneMemory,
           recentAdvice: [...recent.values()].slice(-3).map((value) => value.message),
         };
         ctx.bus.emit('dataSent', {
@@ -135,8 +145,17 @@ export function createVisionModule(
             }
             const result = parseCoachingResponse(raw);
             if (!result) throw new Error('Video analysis returned an invalid coaching response.');
+            sceneMemory = rememberScene(sceneMemory, result, tripMs);
+            if (result.sceneChanged) {
+              frames = frames.filter((previous) => previous.tripMs >= tripMs);
+              recent.clear();
+            }
             coachingStore.set({
               status: 'ready',
+              observations: result.observations,
+              uncertainties: result.uncertainties,
+              coachingPoint: result.coachingPoint,
+              memoryEntries: sceneMemory.length,
               message: result.shouldSpeak ? result.message : undefined,
               reason: result.reason,
               latencyMs: performance.now() - started,

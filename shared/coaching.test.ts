@@ -52,3 +52,21 @@ it('validates frame count, image format and increasing replay timestamps', () =>
   expect(parseCoachingRequest({ ...input, recentAdvice: ['Go now.'] })).toBeUndefined();
   expect(adviceKey('Check your mirrors!')).toBe(adviceKey('check your mirrors.'));
 });
+
+it('preserves bounded structured observations and rejects incomplete evidence fields', () => {
+  const value = {
+    shouldSpeak: false,
+    message: '',
+    reason: 'Arrival order is unknown.',
+    observations: ['A car is waiting.'],
+    uncertainties: ['Arrival was not observed.'],
+    coachingPoint: 'Do not infer arrival from first visibility.',
+    sceneChanged: false,
+  };
+  expect(parseCoachingResponse(value)).toEqual(value);
+  expect(parseCoachingResponse({ ...value, observations: ['a'.repeat(161)] })).toBeUndefined();
+  expect(parseCoachingResponse({ ...value, sceneChanged: 'no' })).toBeUndefined();
+  expect(
+    parseCoachingResponse({ shouldSpeak: false, message: '', reason: '', observations: [] }),
+  ).toBeUndefined();
+});

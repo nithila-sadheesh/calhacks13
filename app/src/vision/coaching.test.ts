@@ -101,3 +101,27 @@ it('drops stale analysis and recovers from a request failure without inventing s
     s.module.stop();
   }
 });
+
+it('passes timestamped observations to the next analysis and clears them on seek', async () => {
+  const s = setup();
+  s.analyze.mockResolvedValue({
+    ...response,
+    observations: ['A car is already waiting.'],
+    uncertainties: ['Arrival order was not observed.'],
+    coachingPoint: 'Preserve uncertainty.',
+    sceneChanged: false,
+  });
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(4500);
+    const second = s.analyze.mock.calls[1]![0];
+    expect(second.sceneMemory[0].uncertainties).toEqual(['Arrival order was not observed.']);
+    expect(second.frames).toHaveLength(3);
+    s.bus.emit('tripReset', { tripMs: 4500 });
+    const count = s.analyze.mock.calls.length;
+    await s.advance(1200);
+    expect(s.analyze.mock.calls[count]![0].sceneMemory).toEqual([]);
+  } finally {
+    s.module.stop();
+  }
+});

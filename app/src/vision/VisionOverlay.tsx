@@ -21,6 +21,27 @@ export function VisionOverlay({ ctx }: PanelProps) {
         </strong>
         {(snapshot.message ?? simulated?.text) && <p>{snapshot.message ?? simulated?.text}</p>}
         {snapshot.reason && <p>{snapshot.reason}</p>}
+        {snapshot.observations && (
+          <details className="coaching-evidence">
+            <summary>What the coach observed</summary>
+            <ul>
+              {snapshot.observations.map((observation, index) => (
+                <li key={index}>{observation}</li>
+              ))}
+            </ul>
+            {snapshot.uncertainties && snapshot.uncertainties.length > 0 && (
+              <>
+                <strong>Not established</strong>
+                <ul>
+                  {snapshot.uncertainties.map((uncertainty, index) => (
+                    <li key={index}>{uncertainty}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {snapshot.coachingPoint && <p>Teaching point: {snapshot.coachingPoint}</p>}
+          </details>
+        )}
         {snapshot.error && <p>{snapshot.error}</p>}
         {snapshot.latencyMs !== undefined && (
           <small>

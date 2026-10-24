@@ -326,3 +326,13 @@ button.primary:focus-visible,
     gap: 0.5rem;
   }
 }
+
+.coaching-evidence {
+  pointer-events: auto;
+  max-height: 12rem;
+  max-width: min(40rem, 75vw);
+  overflow: auto;
+}
+.coaching-evidence summary {
+  cursor: pointer;
+}

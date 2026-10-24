@@ -17,16 +17,18 @@ const advice = {
   shouldSpeak: true,
   message: 'Watch for cyclists beside parked vehicles.',
   reason: 'A cyclist is visible.',
+  observations: ['A cyclist is beside parked cars.'],
+  uncertainties: ['Intended movement is unknown.'],
+  coachingPoint: 'Identify the specific space restriction.',
+  sceneChanged: false,
 };
 it('sends only validated frames to Anthropic and returns validated JSON', async () => {
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockResolvedValue(
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(advice) }],
-      }),
-    );
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
   const handler = createVisionAdviceHandler({ getKey: () => 'test-only-key', fetcher });
   const response = await handler(request());
   expect(response.status).toBe(200);
@@ -77,14 +79,12 @@ it('fails closed on refusals, bad wording, upstream errors and exceptions', asyn
 });
 it('limits request bursts and resets the warm-instance window', async () => {
   let now = 0;
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockImplementation(async () =>
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(advice) }],
-      }),
-    );
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
   const handler = createVisionAdviceHandler({
     getKey: () => 'test-only-key',
     fetcher,

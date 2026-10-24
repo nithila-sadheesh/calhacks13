@@ -13,6 +13,10 @@ test('video frames generate coaching through the real arbiter and speech events'
               shouldSpeak: true,
               message: 'Watch for cyclists beside parked cars.',
               reason: 'A cyclist is visible near parked vehicles.',
+              observations: ['A cyclist is beside parked vehicles.'],
+              uncertainties: ['Its intended movement is unknown.'],
+              coachingPoint: 'Notice the restricted space beside parked cars.',
+              sceneChanged: false,
             }
           : { shouldSpeak: false, message: '', reason: 'No new useful observation.' },
     });
@@ -26,6 +30,10 @@ test('video frames generate coaching through the real arbiter and speech events'
   await expect(page.locator('.captions')).toHaveText('Watch for cyclists beside parked cars.', {
     timeout: 10000,
   });
+  await page.getByText('What the coach observed', { exact: true }).click();
+  await expect(page.locator('.coaching-evidence')).toContainText(
+    'Its intended movement is unknown.',
+  );
   expect(batches[0]?.frames.length).toBeGreaterThanOrEqual(2);
   expect(batches[0]?.frames[0]?.jpeg.startsWith('/9j/')).toBe(true);
   await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Video coaching');
