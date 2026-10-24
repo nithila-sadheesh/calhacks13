@@ -1,4 +1,5 @@
 import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
+import { VoiceSetupError } from './setupError.ts';
 import { decodePcm } from './pcm.ts';
 
 export type SonicMessage =
@@ -24,19 +25,33 @@ export function createSonicTransport(
   let retry: ReturnType<typeof setTimeout> | undefined;
   let retryMs = 500;
   async function connect(): Promise<WebSocket> {
-    if (stopped) throw new Error('Voice stopped');
+    if (stopped) throw new VoiceSetupError('stopped');
     if (socket?.readyState === WebSocket.OPEN) return socket;
     if (connecting) return connecting;
     connecting = (async () => {
       controller = new AbortController();
       const response = await fetch('/api/cartesia-token', {
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+      }).catch(() => {
+        throw new VoiceSetupError('tokenNetwork');
       });
-      if (!response.ok) throw new Error('Token request failed');
-      const body: unknown = await response.json();
+      if (!response.ok) {
+        const code =
+          response.status === 503
+            ? 'tokenKey'
+            : response.status === 401 || response.status === 403
+              ? 'tokenAuth'
+              : response.status === 429
+                ? 'tokenRate'
+                : 'tokenHttp';
+        throw new VoiceSetupError(code);
+      }
+      const body: unknown = await response.json().catch(() => {
+        throw new VoiceSetupError('tokenInvalid');
+      });
       if (!body || typeof body !== 'object' || !('token' in body) || typeof body.token !== 'string')
-        throw new Error('Invalid token');
-      if (stopped) throw new Error('Voice stopped');
+        throw new VoiceSetupError('tokenInvalid');
+      if (stopped) throw new VoiceSetupError('stopped');
       const params = new URLSearchParams({
         access_token: body.token,
         cartesia_version: CARTESIA_VERSION,
@@ -45,8 +60,8 @@ export function createSonicTransport(
       socket = ws;
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
+          reject(new VoiceSetupError('timeout'));
           ws.close();
-          reject(new Error('Sonic timeout'));
         }, 10000);
         ws.onopen = () => {
           clearTimeout(timer);
@@ -55,16 +70,16 @@ export function createSonicTransport(
         };
         ws.onerror = () => {
           clearTimeout(timer);
-          reject(new Error('Sonic connection failed'));
+          reject(new VoiceSetupError('connection'));
         };
         ws.onclose = () => {
           clearTimeout(timer);
-          reject(new Error('Sonic closed'));
+          reject(new VoiceSetupError('connection'));
         };
       });
       if (stopped) {
         ws.close();
-        throw new Error('Voice stopped');
+        throw new VoiceSetupError('stopped');
       }
       ws.onmessage = (event) => {
         try {

@@ -89,3 +89,13 @@ test('live recorded replay measures Claude coaching and Cartesia playback', asyn
   expect(speech.some((request) => request.origin === 'vision')).toBe(true);
   expect(audible.length).toBeGreaterThan(0);
 });
+
+test('live sound setup connects without sending frames or speech', async ({ page }) => {
+  test.skip(process.env.LIVE_SOUND_CHECK !== '1', 'Opt-in Cartesia connection check only.');
+  await page.goto('/?mock=vision');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Load demo drive' }).click();
+  await page.getByRole('button', { name: 'Enable replay sound' }).click();
+  await expect(page.locator('video')).toHaveJSProperty('controls', true, { timeout: 15000 });
+  await expect(page.getByText('Sound enabled for replay.', { exact: true })).toBeVisible();
+});

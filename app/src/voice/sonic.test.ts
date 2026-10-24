@@ -126,7 +126,7 @@ describe('Sonic session transport', () => {
   it('times out a connection and does not expose the token in errors', async () => {
     const s = setup();
     const pending = s.transport.send('one', 'Turn ahead.');
-    const check = expect(pending).rejects.toThrow('Sonic');
+    const check = expect(pending).rejects.toThrow('timed out');
     await flush();
     await vi.advanceTimersByTimeAsync(10000);
     await check;

@@ -9,6 +9,7 @@ import { UpcomingPanel } from '../map/UpcomingPanel.tsx';
 import { createReplay } from '../replay/replay.ts';
 import { loadFixtures } from '../replay/fixtures.ts';
 import { VisionOverlay } from '../vision/VisionOverlay.tsx';
+import { voiceSetupMessage } from '../voice/setupError.ts';
 import { voiceModule } from '../voice/index.ts';
 import { VoicePanel } from '../voice/VoicePanel.tsx';
 import { Captions } from './Captions.tsx';
@@ -24,6 +25,8 @@ export function Drive({ bus, modules }: DriveProps) {
   const [error, setError] = useState<string>();
   const [ready, setReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundConnecting, setSoundConnecting] = useState(false);
+  const [soundError, setSoundError] = useState<string>();
   const realVoice = modules.includes(voiceModule);
   const canPlay = ready && (!realVoice || soundEnabled);
 
@@ -100,15 +103,27 @@ export function Drive({ bus, modules }: DriveProps) {
         {ready && realVoice && !soundEnabled && (
           <button
             type="button"
+            disabled={soundConnecting}
             onClick={() => {
+              setSoundConnecting(true);
+              setSoundError(undefined);
               void voiceModule
                 .enableAudio()
-                .then(() => setSoundEnabled(true))
-                .catch(() => setError('Could not enable sound. Try again.'));
+                .then(() => {
+                  setSoundEnabled(true);
+                  setSoundError(undefined);
+                })
+                .catch((error: unknown) => setSoundError(voiceSetupMessage(error)))
+                .finally(() => setSoundConnecting(false));
             }}
           >
-            Enable replay sound
+            {soundConnecting ? 'Connecting sound…' : 'Enable replay sound'}
           </button>
+        )}
+        {soundError && (
+          <p className="error" role="alert">
+            {soundError}
+          </p>
         )}
         <Captions bus={bus} />
       </section>
@@ -122,7 +137,7 @@ export function Drive({ bus, modules }: DriveProps) {
         {ctx &&
           ready &&
           (realVoice ? (
-            <VoicePanel ctx={ctx} />
+            <VoicePanel ctx={ctx} audioEnabled={soundEnabled} />
           ) : (
             <section className="panel">
               <h2>Voice</h2>

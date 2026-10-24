@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { voiceModule } from './index.ts';
 import { useEvents } from '../../../shared/useEvents.ts';
 import type { PanelProps } from '../../../shared/types.ts';
@@ -11,8 +11,7 @@ const MIC_LABELS: Record<MicStatus, string> = {
   transcribing: 'Recognizing command…',
   error: 'Microphone or voice connection failed. Check permissions and try again.',
 };
-export function VoicePanel({ ctx }: PanelProps) {
-  const [audioStatus, setAudioStatus] = useState('Enable sound before replay.');
+export function VoicePanel({ ctx, audioEnabled = false }: PanelProps & { audioEnabled?: boolean }) {
   const status = useSyncExternalStore(voiceModule.onMicStatus, voiceModule.micStatus);
   const started = useEvents(ctx.bus, 'speechStarted');
   const commands = useEvents(ctx.bus, 'voiceCommand');
@@ -33,18 +32,9 @@ export function VoicePanel({ ctx }: PanelProps) {
   return (
     <section className="panel">
       <h2>Voice</h2>
-      <button
-        type="button"
-        onClick={() => {
-          void voiceModule
-            .enableAudio()
-            .then(() => setAudioStatus('Sound enabled.'))
-            .catch(() => setAudioStatus('Could not enable sound. Try again.'));
-        }}
-      >
-        Enable sound
-      </button>
-      <p role="status">{audioStatus}</p>
+      <p role="status">
+        {audioEnabled ? 'Sound enabled for replay.' : 'Enable replay sound to connect the voice.'}
+      </p>
       <p>{last ? `First audible: ${Math.round(last.firstAudibleMs)} ms` : 'Nothing spoken yet.'}</p>
       <button
         type="button"

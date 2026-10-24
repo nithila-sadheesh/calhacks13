@@ -1,3 +1,4 @@
+import { VoiceSetupError } from './setupError.ts';
 import { log } from '../../../shared/log.ts';
 import type { AppModule, ModuleContext } from '../../../shared/types.ts';
 import { createPushToTalk, type MicStatus } from './pushToTalk.ts';
@@ -80,8 +81,12 @@ export function createVoiceModule(): AppModule & {
       log('voice', 'ready', { clipsLoaded: clips.size });
     },
     async enableAudio() {
-      if (!player) throw new Error('Voice is still loading.');
-      await player.enable();
+      if (!player) throw new VoiceSetupError('loading');
+      try {
+        await player.enable();
+      } catch {
+        throw new VoiceSetupError('audio');
+      }
       // Establish the session before replay so token/WebSocket setup does not consume
       // the first spoken line's 1.5 s audio deadline.
       await engine?.prepare();

@@ -21,6 +21,29 @@ const seek = (page: Page, s: number) =>
   video(page).evaluate((v: HTMLVideoElement, t) => (v.currentTime = t), s);
 const tripSeconds = (page: Page) => video(page).evaluate((v: HTMLVideoElement) => v.currentTime);
 
+async function fakeSonicSocket(page: Page) {
+  await page.addInitScript(() => {
+    class FakeSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen?: () => void;
+      onclose?: () => void;
+      constructor() {
+        setTimeout(() => {
+          this.readyState = 1;
+          this.onopen?.();
+        }, 0);
+      }
+      send() {}
+      close() {
+        this.readyState = 3;
+        this.onclose?.();
+      }
+    }
+    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  });
+}
+
 test('setup screen requires the supervisor check', async ({ page }) => {
   await page.goto('/');
   const start = page.getByRole('button', { name: 'Load demo drive' });
@@ -111,26 +134,7 @@ test('real voice loads clips and unlocks sound before replay controls are offere
   await page.route('**/api/cartesia-token', (route) =>
     route.fulfill({ json: { token: 'test-token' } }),
   );
-  await page.addInitScript(() => {
-    class FakeSocket {
-      static OPEN = 1;
-      readyState = 0;
-      onopen?: () => void;
-      onclose?: () => void;
-      constructor() {
-        setTimeout(() => {
-          this.readyState = 1;
-          this.onopen?.();
-        }, 0);
-      }
-      send() {}
-      close() {
-        this.readyState = 3;
-        this.onclose?.();
-      }
-    }
-    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
-  });
+  await fakeSonicSocket(page);
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -149,4 +153,30 @@ test('real voice loads clips and unlocks sound before replay controls are offere
   release();
   await page.getByRole('button', { name: 'Enable replay sound' }).click();
   await expect(video(page)).toHaveJSProperty('controls', true);
+});
+
+test('sound setup reports token failure and recovers on retry through one control', async ({
+  page,
+}) => {
+  await fakeSonicSocket(page);
+  let attempts = 0;
+  await page.route('**/api/cartesia-token', (route) => {
+    attempts++;
+    return route.fulfill(
+      attempts === 1
+        ? { status: 503, json: { error: 'not configured' } }
+        : { json: { token: 'test-token' } },
+    );
+  });
+  await page.goto('/?mock=map,vision');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Load demo drive' }).click();
+  await page.getByRole('button', { name: 'Enable replay sound' }).click();
+  await expect(page.getByRole('alert')).toContainText('Cartesia server key is missing');
+  await expect(page.locator('video')).toHaveJSProperty('controls', false);
+  await page.getByRole('button', { name: 'Enable replay sound' }).click();
+  await expect(page.locator('video')).toHaveJSProperty('controls', true);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByText('Sound enabled for replay.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enable sound', exact: true })).toHaveCount(0);
 });
