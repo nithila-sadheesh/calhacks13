@@ -16,6 +16,8 @@ The user approved replacing local detector decisions with cloud VLM coaching on 
 - Both Anthropic and Cartesia keys stay in server-only environment variables. No image payloads, keys, or tokens in logs. Use one analysis request at a time, clear on replay changes, and discard stale responses.
 - MediaPipe code is retained only as a legacy diagnostic/regression path (`localRuntime.ts`), not the production vision entry point.
 
+The user subsequently approved extensive instructor guidance, written scenarios and bounded scene memory. Conditional jurisdiction-specific yielding explanations require observed controls/history and an explicitly matching server jurisdiction. Unknown evidence remains unknown; no go/clearance authorization is permitted. `docs/COACHING_GUIDE.md` describes this revision.
+
 The original rules below apply wherever not superseded by this approved revision.
 
 ## 1. Project in one paragraph

@@ -21,6 +21,14 @@ This section is the current architecture, approved by the user during integratio
 
 **Measured spike:** one live request with three actual recorded frames returned HTTP 200 and validated coaching JSON in approximately 4.4 seconds. This is one response, not a latency benchmark or safety evaluation. Production deployment and full live-audio acceptance remain pending.
 
+### Instructor guidance revision
+
+The server prompt now lives in `server/coachingPrompt.ts` and includes an extended teaching library and ten written scenarios. See `docs/COACHING_GUIDE.md`. Production JSON additionally requires `observations`, `uncertainties`, `coachingPoint` and `sceneChanged`. Older minimal responses remain accepted only for backward-compatible test doubles on the client.
+
+Frame history is bounded to 20 seconds; requests select one earlier anchor and two recent frames. Up to four prior model observation/uncertainty entries within 20 seconds provide scene context. They are explicitly unverified, cannot establish continuous tracking/arrival order, and clear on reported cuts or replay lifecycle changes. No extra frames or GPS coordinates are uploaded beyond the three-frame limit. The maximum response budget is now 700 tokens for the richer schema.
+
+The optional server `COACHING_JURISDICTION` defaults to unknown. Conditional California examples do not authorize local-law assumptions about unrelated footage. Current prompt/memory improvements are not fine-tuning or proof of instructor competence; source references and testing limits are documented in the coaching guide.
+
 ## Original v2 blueprint (historical where superseded)
 
 ## Summary
