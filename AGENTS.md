@@ -41,7 +41,7 @@ Shared by nobody: `fixtures/demo-drive/video.mp4` (team recording; Rohit commits
 - Node 22.6+, npm. Vite + React 19 + TypeScript (strict). Vitest for unit tests, Playwright (installed Chrome) for end-to-end tests. ESLint + Prettier with repo defaults.
 - `npm run dev`: local dev server. Camera and mic need HTTPS on phones; use the Vercel preview URL or a tunnel for phone testing.
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`.
-- `/api/<name>` in dev runs the `GET` (etc.) handler exported from `server/<name>.ts`, with `.env` loaded. Nithila’s implemented token handler lives in `api/cartesia-token.ts`; aligning dev routing with it is pending integration work.
+- `/api/<name>` in dev runs the `GET` (etc.) handler exported from `api/<name>.ts`, with `.env` loaded. The same entry point serves token requests locally and on Vercel.
 - Mocks: add `?mock=map,vision,voice,arbiter` (any subset) to the dev URL to replace those modules with their mocks.
 - Vision: MediaPipe Tasks Vision object detector (EfficientDet-Lite0). Voice: Cartesia Sonic (TTS WebSocket) and Ink-2 (STT). Map data: OSRM and Overpass, fetched by scripts into fixtures; the app never calls them at runtime.
 

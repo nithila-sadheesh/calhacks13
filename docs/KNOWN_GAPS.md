@@ -1,17 +1,15 @@
 # Known gaps and things to know
 
-Current state: Rohit’s shell and Nithila’s voice implementation are combined on `integration`. Branch-level verification is recorded in the owner notes; combined checks and live Chrome acceptance must be rerun. Map and vision remain stubs.
+Current state: Rohit’s shell and Nithila’s voice implementation are combined on `integration`. Combined deterministic tests cover real arbiter/voice interruption, offline fallback, repeat, pause and seek. Live audio/microphone acceptance still needs the demo laptop. Map and vision remain stubs.
 
 ## Missing pieces
 
 | Gap | Owner | Notes |
 | --- | --- | --- |
 | Real drive video not recorded yet | whole team (records), Rohit (commits) | `fixtures/demo-drive/video.mp4` is a 60 s H.264 test pattern with an on-screen seconds counter, committed through Git LFS. It has no pedestrians or road features, so only mocks produce events on it. Replace it with the real drive at the end and re-run `npm run e2e` and `tests/e2e/smoke.md`. |
-| Token endpoint dev routing differs | Rohit, Nithila | The implemented handler is `api/cartesia-token.ts`. Vite still loads the legacy `server/cartesia-token.ts` 501 stub. Align dev routing before testing streaming through `npm run dev`. Vercel deployment remains unverified. |
 | Map and vision remain stubs | Jeev, Tejas | Voice and arbiter are implemented. Real route cues and frame-based alerts await their owners; use explicit map/vision mocks for integration testing. |
 | Drive fixtures are placeholders | Jeev | Track, route and features are sample data. Six generated PCM clips and a populated audio manifest are supplied by Nithila. |
 | Turn cues may not need a `Route` change | Jeev | `features.json` already supports `turnLeft`/`turnRight` with `street` and `routeDistM`. Confirm before asking for a `Route` contract change. |
-| Clip key alignment pending | Rohit, Nithila, Tejas | Voice ships `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. The vision mock uses `pedestrian`; arbiter fallback keys use `fallbackTurn`, `fallbackStopSign`, `fallbackCrosswalk`. Voice currently derives fallback keys from approved text and ignores `fallbackClipKey`. Align consumers before claiming integrated alert playback. |
 | Voice behavior on mute and pause | Rohit, Nithila | Arbiter lets the current line finish on mute. Voice resets audio and cancels microphone capture on pause/end/reset, emitting speechEnded for active playback. Verify the combined resume behavior in Chrome. |
 | Interrupted cues rarely get replayed | Jeev | The arbiter replays an interrupted cue once if it is still before `expiresMs` after the alert ends (about 2 s for the alert line, plus a 1 s gap). With the design's 3 s "drop after" windows, most interrupted cues expire first and the timeline shows "dropped: expired". If the demo should show a replay, cues need a longer `expiresMs`. |
 | No Spanish, stretch or live-camera work | team | Chosen at Checkpoint 2. |
@@ -63,3 +61,14 @@ Changes made on `rohit/shell` (all additive; nothing existing changed meaning):
 | `ArbiterDecision.speakId?: string` (on `spoken` and `interrupted`) | Exact join of a decision to its `speechStarted` latency, even when a cue is spoken twice. | Nobody else publishes it. |
 | `bus.onAny` listeners run before per-type listeners | The debug log now shows an event before any events its listeners emit, so the log reads in cause-and-effect order. | No module uses `onAny` for logic. |
 | Mock arbiter sets `speakId` | Matches the real arbiter. | Nobody. |
+
+## Integration handoff
+
+- Local Vite API routing loads `api/cartesia-token.ts`, the same entry point used by Vercel. `api/` is included in typechecking. No new shared event fields or dependencies were added.
+- Canonical bundled keys are `pedestrianNearby`, `followingDistance`, `cameraPaused`, `turn`, `stopSign`, `crosswalk`. The vision mock and arbiter now match the shipped manifest. Tejas must use `pedestrianNearby` for the pedestrian alert clip.
+- Use `?mock=map,vision` to exercise the real arbiter and voice while the unfinished modules remain stubs. Wait for voice readiness and click **Enable sound** before playback. Sonic/Ink require a server-side Cartesia key; preloaded clips can play offline.
+- Voice currently chooses route fallback by approved text; the arbiter also supplies the matching `fallbackClipKey`. Traffic-light reminders have no bundled fallback.
+- Map/vision implementation and real drive fixtures remain assigned to Jeev/Tejas. Replace one mock at a time, verify reset behavior and event ownership, then run the full smoke checklist.
+- Remaining acceptance: real Chrome speaker/mic behavior, live Ink recognition, Wi-Fi-off playback, deployed token endpoint, real frame-based alerts, track sync and full real-drive replay. Automated audio doubles do not prove audible output.
+
+Verification on the integration checkout: typecheck, lint, build and 119 unit/integration tests pass. Chrome setup and token-route tests pass; four replay tests fail at video readiness because the checkout contains only the LFS pointer and Git LFS is unavailable. Restore the tracked video with Git LFS and rerun `npm run e2e`; no replacement footage was generated.

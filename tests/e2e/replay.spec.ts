@@ -92,3 +92,14 @@ test('all mocks: modules start, then the idle state is announced', async ({ page
   expect(order[1]).toContain('idle');
   expect(problems).toEqual([]);
 });
+
+test('local token route reaches the production handler and rejects cross-origin requests', async ({
+  request,
+}) => {
+  const response = await request.get('/api/cartesia-token', {
+    headers: { Origin: 'https://untrusted.example' },
+  });
+  expect(response.status()).toBe(403);
+  expect(response.headers()['cache-control']).toBe('no-store');
+  expect(await response.json()).toEqual({ error: 'Cross-origin token requests are not allowed.' });
+});

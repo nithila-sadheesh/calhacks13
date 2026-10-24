@@ -6,6 +6,7 @@ const port = 5174;
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  testMatch: '**/*.spec.ts',
   timeout: 60_000,
   fullyParallel: false,
   reporter: 'list',
