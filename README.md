@@ -1,6 +1,6 @@
 # Voya - the voice co-pilot for student/learning drivers
 
-Voya is a proactive, speech-first AI coach for supervised practice drives. The product is geared toward hesitant student drivers who want extra coaching or have parents/guardians/adults who may not be comfortable teaching driving. A phone on the dashboard watches the road, follows the route, and talks the learner through what matters: a stop sign ahead, a cyclist on the right, a pedestrian crossing, a turn coming up. Tap the mic to ask a question/clarification out loud and hear a concise answer back.
+Voya is a proactive, speech-first AI coach for supervised practice drives. The product is geared toward hesitant student drivers who want extra coaching, and it supplements parents/guardians/adults who may not be comfortable teaching driving. A phone on the dashboard watches the road, follows the route, and talks the learner through what matters: a stop sign ahead, a cyclist on the right, a pedestrian crossing, a turn coming up. Tap the mic to ask a question/clarification out loud and hear a concise answer back.
 
 Everything is voiced, so eyes stay on the road. Captions show each line for the supervisor.
 
