@@ -1,11 +1,29 @@
 [
   {
-    "id": "placeholder-stop-1",
+    "id": "stopSign-10014714211",
     "kind": "stopSign",
-    "lat": 37.8716,
-    "lon": -122.2718,
-    "routeDistM": 79,
-    "source": "curated",
-    "note": "Placeholder until scripts/route/fetchRoute.ts runs on the real route"
+    "lat": 37.8654634,
+    "lon": -122.2552046,
+    "routeDistM": 154.2,
+    "source": "osm",
+    "note": "OSM node 10014714211"
+  },
+  {
+    "id": "crosswalk-4283825026",
+    "kind": "crosswalk",
+    "lat": 37.8654813,
+    "lon": -122.2552068,
+    "routeDistM": 156.2,
+    "source": "osm",
+    "note": "OSM node 4283825026"
+  },
+  {
+    "id": "turnRight-1",
+    "kind": "turnRight",
+    "lat": 37.865544,
+    "lon": -122.255213,
+    "routeDistM": 163.1,
+    "source": "osrm",
+    "street": "Dwight Way"
   }
 ]
