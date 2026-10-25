@@ -8,7 +8,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
-function setup(periodicReminders = false) {
+function setup() {
   vi.useFakeTimers();
   let ms = 0;
   let x = 0.1;
@@ -35,7 +35,7 @@ function setup(periodicReminders = false) {
     coachingPoint: 'Monitor that road user.',
     sceneChanged: false,
   });
-  const module = createVisionModule({ loadDetector, analyze, periodicReminders });
+  const module = createVisionModule({ loadDetector, analyze });
   const advice: VisionAdvice[] = [];
   bus.on('visionAdvice', (value) => advice.push(value));
   const advance = async (duration: number) => {
@@ -99,6 +99,7 @@ it('keeps detecting while Claude is pending and discards output after reset', as
     await s.module.start(s.ctx);
     await s.advance(5000);
     expect(s.analyze).toHaveBeenCalledTimes(1);
+    expect(s.advice).toEqual([]);
     expect(s.detect.mock.calls.length).toBeGreaterThan(20);
     const signal = s.analyze.mock.calls[0]![1] as AbortSignal;
     s.bus.emit('tripReset', { tripMs: 0 });
@@ -143,8 +144,8 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   });
   try {
     await s.module.start(s.ctx);
-    await s.advance(2500);
-    expect(s.analyze).toHaveBeenCalledTimes(1);
+    await s.advance(15000);
+    expect(s.analyze.mock.calls.length).toBeGreaterThan(1);
     expect(s.advice).toEqual([]);
     expect(coachingStore.get().message).toBeUndefined();
     expect(coachingStore.get().diagnostics?.[0]).toMatchObject({
@@ -157,26 +158,44 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   }
 });
 
-it('offers periodic local reminders while Claude chooses silence and respects active speech', async () => {
-  const s = setup(true);
-  s.analyze.mockResolvedValue({ shouldSpeak: false, message: '', reason: 'No stronger cue.' });
+it('stays silent when there are no stable objects or Claude is unavailable', async () => {
+  const empty = setup();
+  empty.detect.mockReturnValue([]);
+  try {
+    await empty.module.start(empty.ctx);
+    await empty.advance(10000);
+    expect(empty.analyze).not.toHaveBeenCalled();
+    expect(empty.advice).toEqual([]);
+  } finally {
+    empty.module.stop();
+  }
+  const unavailable = setup();
+  unavailable.analyze.mockRejectedValue(new Error('Coaching unavailable.'));
+  try {
+    await unavailable.module.start(unavailable.ctx);
+    await unavailable.advance(10000);
+    expect(unavailable.analyze).toHaveBeenCalled();
+    expect(unavailable.advice).toEqual([]);
+    expect(coachingStore.get().status).toBe('error');
+  } finally {
+    unavailable.module.stop();
+  }
+});
+
+it('publishes advice when Claude changes from silence to a useful teaching point', async () => {
+  const s = setup();
+  s.analyze.mockResolvedValueOnce({
+    shouldSpeak: false,
+    message: '',
+    reason: 'No useful cue yet.',
+  });
   try {
     await s.module.start(s.ctx);
-    await s.advance(3500);
+    await s.advance(3000);
+    expect(s.advice).toEqual([]);
+    await s.advance(3000);
     expect(s.advice).toHaveLength(1);
-    expect(s.advice[0]?.text).toContain('car on your left');
-    s.bus.emit('speak', {
-      id: 'busy',
-      text: 'Keep observing.',
-      priority: 1,
-      sourceId: 'test',
-      origin: 'vision',
-    });
-    await s.advance(4000);
-    expect(s.advice).toHaveLength(1);
-    s.bus.emit('speechEnded', { id: 'busy', interrupted: false });
-    await s.advance(200);
-    expect(s.advice).toHaveLength(2);
+    expect(s.advice[0]?.text).toBe('Keep the car on your left in view.');
   } finally {
     s.module.stop();
   }

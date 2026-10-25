@@ -12,7 +12,6 @@ import type { CvScene } from '../../../shared/cvScene.ts';
 import { loadDetector, type VisionDetector } from './detector.ts';
 import { createTracker, type Track } from './tracker.ts';
 import { createSceneBuilder, sceneKey } from './cvScene.ts';
-import { fallbackAdvice } from './fallbackAdvice.ts';
 import { rememberScene } from './sceneMemory.ts';
 import { coachingStore, type CoachingDiagnostic } from './coachingStore.ts';
 
@@ -42,7 +41,6 @@ async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<Coa
 
 export function createVisionModule(
   options: {
-    periodicReminders?: boolean;
     loadDetector?: () => Promise<VisionDetector>;
     analyze?: (input: CoachingRequest, signal: AbortSignal) => Promise<CoachingResponse>;
   } = {},
@@ -70,9 +68,6 @@ export function createVisionModule(
       const recent = new Map<string, number>();
       let framesProcessed = 0;
       let requestSequence = 0;
-      let lastAdviceMs: number | undefined;
-      let speakingId: string | undefined;
-      let fallbackTurn = 0;
       const diagnostic = (id: number, changes: Partial<CoachingDiagnostic>) => {
         const current = coachingStore.get();
         coachingStore.set({
@@ -100,9 +95,6 @@ export function createVisionModule(
         lastRequestMs = -Infinity;
         lastSentKey = undefined;
         framesProcessed = 0;
-        lastAdviceMs = undefined;
-        speakingId = undefined;
-        fallbackTurn = 0;
         if (!stopped)
           coachingStore.set({
             status: detector ? 'watching' : loadFailed ? 'error' : 'loadingCv',
@@ -114,13 +106,6 @@ export function createVisionModule(
           });
       };
       const off = [
-        ctx.bus.on('speak', ({ id }) => {
-          speakingId = id;
-          lastAdviceMs = ctx.clock.nowMs();
-        }),
-        ctx.bus.on('speechEnded', ({ id }) => {
-          if (speakingId === id) speakingId = undefined;
-        }),
         ctx.bus.on('tripReset', () => {
           reset();
           coachingStore.set({ ...coachingStore.get(), diagnostics: [] });
@@ -198,18 +183,6 @@ export function createVisionModule(
           cvFrames: framesProcessed,
           cvLatencyMs: performance.now() - began,
         });
-        if (lastAdviceMs === undefined) lastAdviceMs = tripMs;
-        if (options.periodicReminders !== false && !speakingId && tripMs - lastAdviceMs >= 3000) {
-          const text = fallbackAdvice(scene, fallbackTurn++);
-          lastAdviceMs = tripMs;
-          ctx.bus.emit('visionAdvice', {
-            id: `vision-fallback-${++sequence}`,
-            text,
-            reason: 'Periodic local observation reminder; no new Claude recommendation available.',
-            tripMs,
-            expiresMs: tripMs + 3000,
-          });
-        }
         const key = sceneKey(scene);
         if (
           !scene.objects.length ||
@@ -314,7 +287,6 @@ export function createVisionModule(
               return;
             }
             diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });
-            lastAdviceMs = now;
             recent.set(result.message, now);
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,

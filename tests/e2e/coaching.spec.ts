@@ -38,7 +38,7 @@ test('local CV generates image-free coaching through the real arbiter and speech
   await expect(page.getByRole('region', { name: 'Data use' })).toContainText('Local CV scene');
 
   await expect(page.locator('video')).toHaveJSProperty('ended', true, { timeout: 15000 });
-  await expect(page.getByRole('region', { name: 'Timeline' })).toContainText(
+  await expect(page.getByRole('region', { name: 'Timeline' })).not.toContainText(
     'Periodic local observation reminder',
   );
   await page.screenshot({ path: '/private/tmp/calhacks13-reconciled-desktop.png', fullPage: true });
