@@ -1,3 +1,4 @@
+import { VoiceSetupError } from './setupError.ts';
 // Tap to start, tap again to stop. The first tap opens the microphone and an Ink session; the
 // second tap stops recording and Ink finalizes the whole utterance. Then a fixed command ("repeat
 // that", "mute", "unmute") runs, or anything else goes out as `voiceQuery` for the assistant.
@@ -18,6 +19,7 @@ export function createPushToTalk(options: {
   bus: Bus;
   clock: TripClock;
   status: (status: MicStatus) => void;
+  onError?: (error: unknown) => void;
   capture?: typeof openCapture;
   ink?: typeof openInk;
   setTimer?: (cb: () => void, ms: number) => unknown;
@@ -67,9 +69,10 @@ export function createPushToTalk(options: {
     if (session) close(session);
     options.status('idle');
   }
-  function fail(session: Session) {
+  function fail(session: Session, error?: unknown) {
     if (current !== session) return;
     cancel();
+    options.onError?.(error);
     options.status('error');
   }
   function send(session: Session, samples: Float32Array) {
@@ -133,7 +136,7 @@ export function createPushToTalk(options: {
         try {
           send(session, samples);
         } catch {
-          fail(session);
+          fail(session, new VoiceSetupError('micConnection'));
         }
       }, session.controller.signal);
       session.capture = capture;
@@ -166,7 +169,7 @@ export function createPushToTalk(options: {
               tripMs: options.clock.nowMs(),
             });
         },
-        onError: () => fail(session),
+        onError: () => fail(session, new VoiceSetupError('micConnection')),
       });
       if (current !== session) {
         ink.cancel();
@@ -182,8 +185,8 @@ export function createPushToTalk(options: {
         options.status('transcribing');
         ink.finish();
       }
-    } catch {
-      fail(session);
+    } catch (error: unknown) {
+      fail(session, error);
     }
   }
 

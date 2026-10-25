@@ -39,7 +39,9 @@ function setup() {
   const clips = new Map<ClipKey, Float32Array>(
     Object.keys(CLIP_TEXT).map((key) => [key as ClipKey, new Float32Array([0.2])]),
   );
+  const error = vi.fn();
   const engine = createVoiceEngine({
+    onError: error,
     bus,
     clock: { nowMs: () => tripMs, onReset: () => () => {} },
     player,
@@ -56,6 +58,7 @@ function setup() {
   const context = () => String(send.mock.calls.at(-1)?.[0]);
   return {
     engine,
+    error,
     speak,
     receive,
     disconnect,
@@ -283,4 +286,12 @@ describe('generated wording', () => {
     expect(s.player.play).not.toHaveBeenCalled();
     expect(s.ended).toHaveBeenCalledWith({ id: 'cue', interrupted: false });
   });
+});
+
+it('reports generated speech that times out instead of silently leaving text without audio', async () => {
+  const s = setup();
+  s.speak('vision', { origin: 'vision', text: 'Keep the car on your left in view.' });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(s.error.mock.calls[0]?.[0]?.message).toContain('Speech could not be played');
+  expect(s.started).not.toHaveBeenCalled();
 });

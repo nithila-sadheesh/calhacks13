@@ -20,6 +20,7 @@ const LABELS: Record<OrbState, string> = {
 export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
   const micStatus = useSyncExternalStore(voiceModule.onMicStatus, voiceModule.micStatus);
   const audioReady = useSyncExternalStore(voiceModule.onAudioReady, voiceModule.audioReady);
+  const micError = useSyncExternalStore(voiceModule.onDiagnostics, voiceModule.micError);
   const [pendingReply, setPendingReply] = useState(false);
   // "answering" = the copilot is delivering the answer to YOUR question (between its reply and the
   // end of that spoken line). Route reminders never set it, so guidance audio leaves the orb as the
@@ -102,6 +103,7 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
       <p className="mic-orb-label" role="status">
         {label}
       </p>
+      {state === 'error' && micError && <p role="alert">{micError}</p>}
       {active && state === 'idle' && !needsSound && (
         <p className="muted">Tap once, speak after the tone, then tap again to send.</p>
       )}

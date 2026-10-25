@@ -1,3 +1,4 @@
+import { VoiceSetupError } from './setupError.ts';
 import { validCoachingText } from '../../../shared/coaching.ts';
 import type { Bus, SpeakRequest, TripClock } from '../../../shared/types.ts';
 import { isSafeToSpeak } from '../../../shared/safeWording.ts';
@@ -25,6 +26,7 @@ export function createVoiceEngine(options: {
   clips: Map<ClipKey, Float32Array>;
   transport: (receive: (m: SonicMessage) => void, disconnect: () => void) => SonicTransport;
   latencyNow?: () => number;
+  onError?: (error: unknown) => void;
 }) {
   const { bus, clock, player, clips } = options;
   const latencyNow = options.latencyNow ?? (() => performance.now());
@@ -81,6 +83,7 @@ export function createVoiceEngine(options: {
       : ROUTE_FALLBACKS.find((k) => k === requested);
     const samples = key && clips.get(key);
     if (!samples) {
+      options.onError?.(new VoiceSetupError('speech'));
       finish(item, false);
       return;
     }
@@ -129,6 +132,7 @@ export function createVoiceEngine(options: {
   return {
     speak(request: SpeakRequest) {
       if (stopped) return;
+      if (!player.ready()) options.onError?.(new VoiceSetupError('audio'));
       if (
         !(request.origin === 'vision'
           ? validCoachingText(request.text)

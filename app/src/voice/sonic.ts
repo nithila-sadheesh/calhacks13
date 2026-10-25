@@ -1,3 +1,5 @@
+import { fetchCartesiaToken } from './token.ts';
+import { VoiceSetupError } from './setupError.ts';
 import { parseDelivery } from '../../../shared/assistant.ts';
 import type { Delivery } from '../../../shared/types.ts';
 import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
@@ -31,6 +33,7 @@ export function createSonicTransport(
   onMessage: (message: SonicMessage) => void,
   onDisconnect: () => void,
   onSent: (text: string) => void,
+  onStatus?: (error?: unknown) => void,
 ): SonicTransport {
   let socket: WebSocket | undefined;
   let connecting: Promise<WebSocket> | undefined;
@@ -45,37 +48,32 @@ export function createSonicTransport(
     if (connecting) return connecting;
     connecting = (async () => {
       controller = new AbortController();
-      const response = await fetch('/api/cartesia-token', {
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
-      });
-      if (!response.ok) throw new Error('Token request failed');
-      const body: unknown = await response.json();
-      if (!body || typeof body !== 'object' || !('token' in body) || typeof body.token !== 'string')
-        throw new Error('Invalid token');
+      const token = await fetchCartesiaToken(controller.signal);
       if (stopped) throw new Error('Voice stopped');
       const params = new URLSearchParams({
-        access_token: body.token,
+        access_token: token,
         cartesia_version: CARTESIA_VERSION,
       });
       const ws = new WebSocket(`wss://api.cartesia.ai/tts/websocket?${params}`);
       socket = ws;
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
+          reject(new VoiceSetupError('timeout'));
           ws.close();
-          reject(new Error('Sonic timeout'));
         }, 10000);
         ws.onopen = () => {
           clearTimeout(timer);
           retryMs = 500;
+          onStatus?.();
           resolve();
         };
         ws.onerror = () => {
           clearTimeout(timer);
-          reject(new Error('Sonic connection failed'));
+          reject(new VoiceSetupError('connection'));
         };
         ws.onclose = () => {
           clearTimeout(timer);
-          reject(new Error('Sonic closed'));
+          reject(new VoiceSetupError('connection'));
         };
       });
       if (stopped) {
@@ -106,6 +104,7 @@ export function createSonicTransport(
       const lost = () => {
         if (socket !== ws || stopped) return;
         socket = undefined;
+        onStatus?.(new VoiceSetupError('connection'));
         onDisconnect();
         clearTimeout(retry);
         retry = setTimeout(() => {
@@ -121,6 +120,9 @@ export function createSonicTransport(
     })();
     try {
       return await connecting;
+    } catch (error: unknown) {
+      if (!stopped) onStatus?.(error);
+      throw error;
     } finally {
       connecting = undefined;
     }

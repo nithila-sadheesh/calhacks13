@@ -1,3 +1,5 @@
+import { fetchCartesiaToken } from './token.ts';
+import { VoiceSetupError } from './setupError.ts';
 import { CARTESIA_VERSION } from './config.ts';
 import { encodePcm } from './pcm.ts';
 
@@ -10,16 +12,10 @@ export async function openInk(options: {
   onError: () => void;
 }): Promise<InkSession> {
   const { signal } = options;
-  const response = await fetch('/api/cartesia-token', {
-    signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
-  });
-  if (!response.ok) throw new Error('Ink token request failed');
-  const body: unknown = await response.json();
-  if (!body || typeof body !== 'object' || !('token' in body) || typeof body.token !== 'string')
-    throw new Error('Invalid Ink token');
+  const token = await fetchCartesiaToken(signal);
   signal.throwIfAborted();
   const query = new URLSearchParams({
-    access_token: body.token,
+    access_token: token,
     cartesia_version: CARTESIA_VERSION,
     model: 'ink-2',
     encoding: 'pcm_s16le',
@@ -49,7 +45,7 @@ export async function openInk(options: {
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cancel();
-        reject(new Error('Ink connection timeout'));
+        reject(new VoiceSetupError('timeout'));
       }, 10000);
       ws.onopen = () => {
         clearTimeout(timeout);
@@ -57,11 +53,11 @@ export async function openInk(options: {
       };
       ws.onerror = () => {
         clearTimeout(timeout);
-        reject(new Error('Ink connection failed'));
+        reject(new VoiceSetupError('micConnection'));
       };
       ws.onclose = () => {
         clearTimeout(timeout);
-        reject(new Error('Ink connection closed'));
+        reject(new VoiceSetupError('micConnection'));
       };
     });
     signal.throwIfAborted();

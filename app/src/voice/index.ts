@@ -1,3 +1,4 @@
+import { microphoneSetupMessage, voiceSetupMessage } from './setupError.ts';
 import { log } from '../../../shared/log.ts';
 import type { AppModule, ModuleContext } from '../../../shared/types.ts';
 import { enterPlaybackSession } from './audioSession.ts';
@@ -19,14 +20,30 @@ export function createVoiceModule(): AppModule & {
   toggleTalk(): void;
   cancelTalk(): void;
   micStatus(): MicStatus;
+  voiceError(): string | undefined;
+  micError(): string | undefined;
+  onDiagnostics(listener: () => void): () => void;
   onMicStatus(listener: () => void): () => void;
 } {
   let mic: ReturnType<typeof createPushToTalk> | undefined;
   let micStatus: MicStatus = 'idle';
+  let connectionError: string | undefined;
+  let speechError: string | undefined;
+  let microphoneError: string | undefined;
+  const diagnosticListeners = new Set<() => void>();
+  const notifyDiagnostics = () => diagnosticListeners.forEach((listener) => listener());
+  const connectionStatus = (error?: unknown) => {
+    connectionError = error ? voiceSetupMessage(error) : undefined;
+    notifyDiagnostics();
+  };
   const micListeners = new Set<() => void>();
   const audioListeners = new Set<() => void>();
   const notifyAudio = () => audioListeners.forEach((listener) => listener());
   const updateMic = (status: MicStatus) => {
+    if (status === 'connecting') {
+      microphoneError = undefined;
+      notifyDiagnostics();
+    }
     // A short chime when recording really starts, so the speaker knows to talk without looking.
     if (status === 'listening' && micStatus !== 'listening' && player?.ready())
       player.play(
@@ -54,6 +71,8 @@ export function createVoiceModule(): AppModule & {
     else player?.close();
     engine = undefined;
     player = undefined;
+    connectionError = speechError = microphoneError = undefined;
+    notifyDiagnostics();
     notifyAudio();
   }
   return {
@@ -73,20 +92,36 @@ export function createVoiceModule(): AppModule & {
         clock: ctx.clock,
         player,
         clips,
+        onError: (error) => {
+          speechError = voiceSetupMessage(error);
+          notifyDiagnostics();
+        },
         transport: (receive, disconnect) =>
-          (sonic = createSonicTransport(receive, disconnect, (text) =>
-            ctx.bus.emit('dataSent', {
-              destination: 'cartesia-tts',
-              summary: `text: "${text}"`,
-              tripMs: ctx.clock.nowMs(),
-            }),
+          (sonic = createSonicTransport(
+            receive,
+            disconnect,
+            (text) =>
+              ctx.bus.emit('dataSent', {
+                destination: 'cartesia-tts',
+                summary: `text: "${text}"`,
+                tripMs: ctx.clock.nowMs(),
+              }),
+            connectionStatus,
           )),
       });
       // Connect now, not on the first reminder: a cold token fetch plus the WebSocket handshake
       // takes about 2.5 s, past the engine's 1.5 s first-audio deadline, so the first reminder
       // would always fall back to a clip. The transport reconnects by itself if the session drops.
       sonic?.warm();
-      mic = createPushToTalk({ bus: ctx.bus, clock: ctx.clock, status: updateMic });
+      mic = createPushToTalk({
+        bus: ctx.bus,
+        clock: ctx.clock,
+        status: updateMic,
+        onError: (error) => {
+          microphoneError = microphoneSetupMessage(error);
+          notifyDiagnostics();
+        },
+      });
       // Load the capture worklet now, so the first tap only has to open the microphone.
       try {
         prepareCapture();
@@ -94,6 +129,10 @@ export function createVoiceModule(): AppModule & {
         log('voice', 'capture preload failed', String(e));
       }
       off = [
+        ctx.bus.on('speechStarted', () => {
+          speechError = undefined;
+          notifyDiagnostics();
+        }),
         ctx.bus.on('speak', (request) => engine?.speak(request)),
         ctx.bus.on('tripReset', () => {
           engine?.reset();
@@ -131,6 +170,14 @@ export function createVoiceModule(): AppModule & {
     },
     cancelTalk() {
       mic?.cancel();
+    },
+    voiceError: () => connectionError ?? speechError,
+    micError: () => microphoneError,
+    onDiagnostics(listener) {
+      diagnosticListeners.add(listener);
+      return () => {
+        diagnosticListeners.delete(listener);
+      };
     },
     micStatus: () => micStatus,
     onMicStatus(listener) {

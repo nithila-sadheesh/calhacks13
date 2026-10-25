@@ -25,6 +25,8 @@ export function VoicePanel({ ctx }: PanelProps) {
   // Read from the player, so it is right whichever button unlocked audio (Start drive does too).
   const audioReady = useSyncExternalStore(voiceModule.onAudioReady, voiceModule.audioReady);
   const status = useSyncExternalStore(voiceModule.onMicStatus, voiceModule.micStatus);
+  const voiceError = useSyncExternalStore(voiceModule.onDiagnostics, voiceModule.voiceError);
+  const micError = useSyncExternalStore(voiceModule.onDiagnostics, voiceModule.micError);
   const started = useEvents(ctx.bus, 'speechStarted');
   const commands = useEvents(ctx.bus, 'voiceCommand');
   const decisions = useEvents(ctx.bus, 'arbiterDecision');
@@ -79,6 +81,7 @@ export function VoicePanel({ ctx }: PanelProps) {
             ? 'Could not enable sound. Try again.'
             : 'Sound is off. Enable it to hear reminders and warnings.'}
       </p>
+      {voiceError && <p role="alert">{voiceError}</p>}
       <p>{last ? `First audible: ${Math.round(last.firstAudibleMs)} ms` : 'Nothing spoken yet.'}</p>
       <div className="mic">
         <button
@@ -94,7 +97,7 @@ export function VoicePanel({ ctx }: PanelProps) {
             <path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6" />
           </svg>
         </button>
-        <p role="status">{MIC_LABELS[status]}</p>
+        <p role="status">{status === 'error' && micError ? micError : MIC_LABELS[status]}</p>
         {command && (!query || command.transcript !== query.transcript) && (
           <p className="muted">
             Heard: {COMMAND_LABELS[command.kind]}

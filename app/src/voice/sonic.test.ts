@@ -44,8 +44,9 @@ function setup() {
   const receive = vi.fn();
   const disconnected = vi.fn();
   const sent = vi.fn();
-  const transport = createSonicTransport(receive, disconnected, sent);
-  return { transport, receive, disconnected, sent, fetcher };
+  const status = vi.fn();
+  const transport = createSonicTransport(receive, disconnected, sent, status);
+  return { transport, receive, disconnected, sent, fetcher, status };
 }
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -189,10 +190,24 @@ describe('Sonic session transport', () => {
   it('times out a connection and does not expose the token in errors', async () => {
     const s = setup();
     const pending = s.transport.send('one', 'Turn ahead.');
-    const check = expect(pending).rejects.toThrow('Sonic');
+    const check = expect(pending).rejects.toThrow('timed out');
     await flush();
     await vi.advanceTimersByTimeAsync(10000);
     await check;
     s.transport.close();
   });
+});
+
+it('exposes warm-up token failure and clears it once a retry connects', async () => {
+  const s = setup();
+  s.fetcher.mockResolvedValueOnce(Response.json({ error: 'private' }, { status: 503 }));
+  s.transport.warm();
+  await flush();
+  expect(s.status.mock.calls[0]?.[0]?.message).toContain('CARTESIA_API_KEY');
+  const pending = s.transport.send('retry', 'Turn ahead.');
+  await flush();
+  Socket.instances[0]!.open();
+  await pending;
+  expect(s.status).toHaveBeenLastCalledWith();
+  s.transport.close();
 });
