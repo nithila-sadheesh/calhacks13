@@ -2,7 +2,7 @@
 
 ## Reconciled UI, conversation and hybrid vision
 
-The reconciled branch uses `tejas/ui-overhaul` as the application base and incorporates hybrid vision from `nithila/voice-setup`. Both replay and live camera/GPS remain available. Route reminders, tap-to-talk, the driving UI, Claude-selected delivery and the Vercel assistant endpoint are preserved. The production observation path is local EfficientDet/tracking → bounded scene JSON → `/api/vision-advice` → `visionAdvice` → arbiter → Sonic. No production video pixels leave the device.
+The reconciled branch includes `tejas/ui-overhaul` through `ef3d8de` (Voya branding and microphone-orb fixes) as the application base and incorporates hybrid vision from `nithila/voice-setup`. Both replay and live camera/GPS remain available. Route reminders, tap-to-talk, the driving UI, Claude-selected delivery and the Vercel assistant endpoint are preserved. The production observation path is local EfficientDet/tracking → bounded scene JSON → `/api/vision-advice` → `visionAdvice` → arbiter → Sonic. No production video pixels leave the device.
 
 Vision additionally publishes `visionScene` (only vision publishes it). The assistant subscribes through the bus and includes a scene with a spoken question only while it is at most three seconds old. The server validates and strips scene fields; its prompt treats boxes, IDs and image trends as tentative evidence, never distance, speed, intent, controls or right-of-way. Scene context clears on pause, end and reset. Conversation retains the UI branch's trip-summary context; full conversational turn history is not implemented.
 
@@ -11,7 +11,7 @@ The shared contract retains both vision and assistant events, both Anthropic dat
 Both `/api/assistant` and `/api/vision-advice` are configured for Vercel; server imports use compilation-compatible `.js` specifiers. Privacy disclosures cover object descriptions, transcribed questions and trip summaries sent to Anthropic, speech text/audio sent to Cartesia, and local GPS use without coordinate uploads. The original source branches and GitHub `integration` are not deployment targets of this reconciliation.
 
 
-Reconciliation validation: `npm run typecheck`, `npm run lint`, `npm test` (369 passed, 2 opt-in tests skipped), `npm run build`, and Chrome end-to-end checks (14 passed, 3 live-provider tests skipped) pass. Browser checks exercise real local model assets and the recording, fake-camera/GPS live startup/end/restart, mocked provider coaching through the real arbiter, reset behavior, and desktop/390-pixel phone layout. Live Anthropic/Cartesia calls, physical microphone/speaker playback, iPhone hardware and production Vercel deployment were not verified in this reconciliation.
+Reconciliation validation: `npm run typecheck`, `npm run lint`, `npm test` (369 passed, 2 opt-in tests skipped), `npm run build`, and Chrome end-to-end checks (14 passed, 3 live-provider tests skipped) pass. Browser checks exercise real local model assets and the recording, fake-camera/GPS live startup/end/restart, mocked provider coaching through the real arbiter, reset behavior, and desktop/390-pixel phone layout. After incorporating the latest Voya UI commits, typecheck, lint, all 369 tests and build passed again, along with three focused setup/audio/live-camera browser checks. Live Anthropic/Cartesia calls, physical microphone/speaker playback, iPhone hardware and production Vercel deployment were not verified in this reconciliation.
 
 ## Current approved revision: local CV with language coaching
 

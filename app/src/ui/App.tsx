@@ -14,7 +14,7 @@ export function App({ bus, modules }: AppProps) {
 
   return (
     <main className="setup">
-      <h1>Learner Co-Pilot</h1>
+      <h1>Voya</h1>
       <p className="lede">
         Supervised practice only. A licensed driver supervises; this is not automated driving or a
         navigation system.
