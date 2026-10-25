@@ -2,7 +2,7 @@ import type { CvScene } from '../../../shared/cvScene.ts';
 import { sceneKey } from './cvScene.ts';
 
 export const SCENE_SETTLE_MS = 1000;
-export const SCENE_REVIEW_MS = 8000;
+export const SCENE_REVIEW_MS = 5000;
 const EMPTY_RESET_MS = 2000;
 
 // Revisit stable observations so one silent response cannot disable commentary for an encounter.

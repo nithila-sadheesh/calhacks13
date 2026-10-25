@@ -15,8 +15,6 @@ import type {
   VisionAdvice,
 } from '../../../shared/types.ts';
 
-export const PROACTIVE_GAP_MS = 6000;
-export const CONVERSATION_QUIET_MS = 8000;
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
 export const REPLAY_GAP_MS = 1000; // shorter gap before an interrupted cue's replay or a repeat
 export const ALERT_COOLDOWN_MS = 8000; // per alert kind
@@ -75,8 +73,6 @@ export type ArbiterState = {
   playing: boolean;
   inputActive: boolean;
   pendingQueryId?: string;
-  lastProactiveMs?: number;
-  quietUntilMs: number;
   seq: number; // never reset, so speak ids stay unique across seeks
 };
 
@@ -110,7 +106,6 @@ export function initialState(playing = false, seq = 0): ArbiterState {
     cameraPausedSaid: false,
     playing,
     inputActive: false,
-    quietUntilMs: 0,
     seq,
   };
 }
@@ -187,7 +182,6 @@ export function step(
       if (input.active && !s.inputActive) s.pendingQueryId = undefined;
       s.inputActive = input.active;
       if (input.active) interruptForUser(run);
-      else s.quietUntilMs = nowMs + CONVERSATION_QUIET_MS;
       break;
     case 'query':
       s.pendingQueryId = input.id;
@@ -199,7 +193,6 @@ export function step(
         break;
       }
       s.pendingQueryId = undefined;
-      s.quietUntilMs = nowMs + CONVERSATION_QUIET_MS;
       onAnswer(run, input.reply);
       break;
     case 'advice': {
@@ -308,18 +301,9 @@ function offer(run: Run, item: Item) {
   if (
     item.priority > 0 &&
     unsolicited &&
-    (s.inputActive ||
-      s.pendingQueryId ||
-      s.current?.item.origin === 'answer' ||
-      nowMs < s.quietUntilMs)
+    (s.inputActive || s.pendingQueryId || s.current?.item.origin === 'answer')
   )
     return reject('dropped', 'conversation has the floor');
-  if (
-    item.origin === 'vision' &&
-    s.lastProactiveMs !== undefined &&
-    nowMs - s.lastProactiveMs < PROACTIVE_GAP_MS
-  )
-    return reject('dropped', 'coaching cooldown');
   if (item.alertKind) {
     const last = s.lastAlertMs[item.alertKind];
     if (last !== undefined && nowMs - last < ALERT_COOLDOWN_MS) {
@@ -460,8 +444,6 @@ function readyAt(s: Draft, item: Item): number {
 }
 
 function finishCurrent(run: Run) {
-  if (run.s.current?.item.origin === 'answer')
-    run.s.quietUntilMs = run.nowMs + CONVERSATION_QUIET_MS;
   run.s.current = undefined;
   run.s.lastEndMs = run.nowMs;
 }
@@ -515,7 +497,6 @@ function speak(run: Run, item: Item) {
   s.seq += 1;
   const speakId = `${item.sourceId}#${s.seq}`;
   s.current = { item, speakId, startedMs: nowMs };
-  if (item.origin === 'vision') s.lastProactiveMs = nowMs;
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
   if (

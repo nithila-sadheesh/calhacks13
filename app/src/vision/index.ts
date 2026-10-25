@@ -192,7 +192,7 @@ export function createVisionModule(
         gate.submitted(scene);
         sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
         previousScenes = previousScenes.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
-        for (const [text, time] of recent) if (tripMs - time > 90000) recent.delete(text);
+        for (const [text, time] of recent) if (tripMs - time > 20000) recent.delete(text);
         const input: CoachingRequest = {
           scene,
           previousScenes: previousScenes.slice(-3),
@@ -275,7 +275,7 @@ export function createVisionModule(
             const normalized = adviceKey(result.message);
             if (
               [...recent].some(
-                ([text, time]) => adviceKey(text) === normalized && now - time < 90000,
+                ([text, time]) => adviceKey(text) === normalized && now - time < 20000,
               )
             ) {
               diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });

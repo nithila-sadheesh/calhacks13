@@ -8,8 +8,6 @@ import type {
 } from '../../../shared/types.ts';
 import {
   ALERT_COOLDOWN_MS,
-  PROACTIVE_GAP_MS,
-  CONVERSATION_QUIET_MS,
   ANSWER_TTL_MS,
   CAMERA_PAUSED,
   NOTHING_TO_REPEAT,
@@ -756,7 +754,7 @@ it('interrupts ordinary speech at microphone start and never resumes the interru
   );
   expect(h.speaks.at(-1)?.sourceId).toBe('a1');
   h.end(2000);
-  h.send({ type: 'tick' }, 2000 + CONVERSATION_QUIET_MS);
+  h.send({ type: 'tick' }, 11000);
   expect(h.speaks.map((s) => s.sourceId)).toEqual(['old', 'a1']);
   expect(h.state.queue).toEqual([]);
 });
@@ -776,25 +774,29 @@ it('lets priority-zero warnings finish and break through a user turn', () => {
   expect(h.speaks.at(-1)?.priority).toBe(0);
 });
 
-it('limits proactive advice frequency and leaves quiet time after a requested answer', () => {
+it('uses normal speech spacing without an extra coaching cooldown or post-answer quiet period', () => {
   const h = new Harness();
   h.send({ type: 'advice', advice: vision('first') }, 0);
   h.end(1000);
-  h.send({ type: 'advice', advice: vision('too-soon', 2000) }, 2000);
-  expect(h.decisions).toContainEqual(['too-soon', 'dropped', 'coaching cooldown']);
-  h.send({ type: 'advice', advice: vision('later', PROACTIVE_GAP_MS) }, PROACTIVE_GAP_MS);
-  expect(h.speaks.at(-1)?.sourceId).toBe('later');
-  h.end(PROACTIVE_GAP_MS + 1000);
+  h.send({ type: 'advice', advice: vision('next', 2000) }, 2000);
+  expect(h.speaks.at(-1)?.sourceId).toBe('next');
+  h.end(3000);
+
+  h.send({ type: 'query', id: 'q1' }, 4000);
+  h.send({ type: 'voiceActivity', active: false }, 4100);
   h.send(
     {
       type: 'answer',
-      reply: { id: 'a1', queryId: 'q1', text: 'Check your mirrors.', tripMs: 20000 },
+      reply: { id: 'a1', queryId: 'q1', text: 'Check your mirrors.', tripMs: 5000 },
     },
-    20000,
+    5000,
   );
-  h.end(22000);
-  h.send({ type: 'cue', cue: cue({ earliestMs: 23000, expiresMs: 40000 }) }, 23000);
-  expect(h.decisions).toContainEqual(['cue-1', 'dropped', 'conversation has the floor']);
+  expect(h.speaks.at(-1)?.sourceId).toBe('a1');
+  h.send({ type: 'advice', advice: vision('during-answer', 5500) }, 5500);
+  expect(h.decisions).toContainEqual(['during-answer', 'dropped', 'conversation has the floor']);
+  h.end(6000);
+  h.send({ type: 'advice', advice: vision('after-answer', 7000) }, 7000);
+  expect(h.speaks.at(-1)?.sourceId).toBe('after-answer');
 });
 
 it('releases the floor when a new microphone attempt is cancelled instead of waiting for an obsolete answer', () => {

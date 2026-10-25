@@ -144,7 +144,7 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   });
   try {
     await s.module.start(s.ctx);
-    await s.advance(15000);
+    await s.advance(12000);
     expect(s.analyze).toHaveBeenCalledTimes(2);
     expect(s.advice).toEqual([]);
     expect(coachingStore.get().message).toBeUndefined();
@@ -193,7 +193,7 @@ it('reconsiders an unchanged scene after silence and publishes Claude-selected c
     await s.module.start(s.ctx);
     await s.advance(3000);
     expect(s.advice).toEqual([]);
-    await s.advance(6000);
+    await s.advance(4000);
     expect(s.advice).toHaveLength(1);
     expect(s.advice[0]?.text).toBe('Keep the car on your left in view.');
   } finally {
