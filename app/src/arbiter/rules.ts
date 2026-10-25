@@ -23,7 +23,7 @@ export const ALERT_COOLDOWN_MS = 8000; // per alert kind
 export const REPEAT_TTL_MS = 10000;
 export const ANSWER_TTL_MS = 15000; // a spoken answer older than this is no longer an answer
 export const SYSTEM_TTL_MS = 10000;
-export const WATCHDOG_SLACK_MS = 4000; // on top of the estimated speech length
+export const WATCHDOG_SLACK_MS = 8000; // on top of the estimated speech length
 const CHARS_PER_SECOND = 14;
 const SLOWER_PACE_FACTOR = 1.25; // a 'slower' line takes longer; Sonic treats speed as guidance
 

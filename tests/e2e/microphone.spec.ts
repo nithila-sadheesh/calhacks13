@@ -124,7 +124,9 @@ test('distinguishes microphone permission denial from a provider failure', async
   await expect(page.locator('.dock [role=alert]')).not.toContainText('private detail');
 });
 
-test('generated instructions reach real browser audio playback through Sonic', async ({ page }) => {
+test('generated instructions survive delayed Sonic audio and reach browser playback', async ({
+  page,
+}) => {
   await page.route('**/api/cartesia-token', (route) =>
     route.fulfill({ json: { token: 'test-token' } }),
   );
@@ -133,7 +135,7 @@ test('generated instructions reach real browser audio playback through Sonic', a
     audio.writeInt16LE(Math.round(Math.sin((i * 2 * Math.PI * 440) / 24000) * 2000), i * 2);
   const spoken: string[] = [];
   await page.routeWebSocket('**/tts/websocket?*', (socket) => {
-    socket.onMessage((message) => {
+    socket.onMessage(async (message) => {
       if (typeof message !== 'string') return;
       const request = JSON.parse(message) as {
         context_id?: string;
@@ -142,6 +144,7 @@ test('generated instructions reach real browser audio playback through Sonic', a
       };
       if (!request.transcript || !request.context_id || request.cancel) return;
       spoken.push(request.transcript);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
       socket.send(
         JSON.stringify({
           type: 'chunk',

@@ -176,7 +176,7 @@ describe('voice playback and fallback', () => {
   it('ends without speech if no matching fallback exists', () => {
     const s = setup();
     s.speak('light', { text: 'Traffic light ahead. Be ready to stop.' });
-    vi.advanceTimersByTime(1500);
+    vi.advanceTimersByTime(5000);
     expect(s.nodes).toHaveLength(0);
     expect(s.ended).toHaveBeenCalledWith({ id: 'light', interrupted: false });
   });
@@ -291,7 +291,7 @@ describe('generated wording', () => {
 it('reports generated speech that times out instead of silently leaving text without audio', async () => {
   const s = setup();
   s.speak('vision', { origin: 'vision', text: 'Keep the car on your left in view.' });
-  await vi.advanceTimersByTimeAsync(1500);
+  await vi.advanceTimersByTimeAsync(5000);
   expect(s.error.mock.calls[0]?.[0]?.message).toContain('Speech could not be played');
   expect(s.started).not.toHaveBeenCalled();
 });
@@ -311,4 +311,20 @@ it('cancels buffered audio and late chunks on a user interruption but preserves 
   s.engine.interrupt();
   expect(s.nodes[1]?.stop).not.toHaveBeenCalled();
   s.engine.stop();
+});
+
+it('plays delayed generated audio instead of cancelling it at the clip fallback deadline', async () => {
+  const s = setup();
+  s.speak('vision', { origin: 'vision', text: 'Keep the car on your left in view.' });
+  const id = s.context();
+  await vi.advanceTimersByTimeAsync(2500);
+  expect(s.cancel).not.toHaveBeenCalled();
+  expect(s.ended).not.toHaveBeenCalled();
+  s.receive({ id, type: 'chunk', samples: new Float32Array([0.2]) });
+  s.nodes[0]!.start();
+  s.receive({ id, type: 'done' });
+  s.nodes[0]!.end();
+  expect(s.started).toHaveBeenCalledTimes(1);
+  expect(s.ended).toHaveBeenCalledWith({ id: 'vision', interrupted: false });
+  expect(s.error).not.toHaveBeenCalled();
 });

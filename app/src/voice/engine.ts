@@ -170,7 +170,9 @@ export function createVoiceEngine(options: {
         else finish(item, false);
         return;
       }
-      item.timer = setTimeout(() => fallback(item), 1500);
+      // Generated lines have no recorded fallback; allow cold setup and synthesis to finish.
+      const firstAudioMs = fallbackKey(request.text) || request.fallbackClipKey ? 1500 : 5000;
+      item.timer = setTimeout(() => fallback(item), firstAudioMs);
       void transport.send(item.context, request.text, request.delivery).catch(() => fallback(item));
     },
     interrupt(id?: string) {

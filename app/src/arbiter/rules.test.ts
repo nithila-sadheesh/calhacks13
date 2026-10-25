@@ -549,13 +549,13 @@ describe('assistant', () => {
     const slow = new Harness();
     slow.send({ type: 'answer', reply: reply({ delivery }) }, 1000);
     expect(slow.speaks[0]?.delivery).toEqual(delivery);
-    slow.send({ type: 'tick' }, 8000);
+    slow.send({ type: 'tick' }, 12000);
     expect(slow.currentId).toBeDefined();
 
     const normal = new Harness();
     normal.send({ type: 'answer', reply: reply() }, 1000);
     expect(normal.speaks[0]?.delivery).toBeUndefined();
-    normal.send({ type: 'tick' }, 8000);
+    normal.send({ type: 'tick' }, 12000);
     expect(normal.currentId).toBeUndefined();
   });
 
