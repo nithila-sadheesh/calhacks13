@@ -1,6 +1,7 @@
 // The one hands-free control: a large microphone orb that reflects the real voice state
 // (idle / connecting / listening / transcribing → thinking / speaking) and toggles push-to-talk.
-// It reads voiceModule (ui already imports it in Drive) and derives speaking/thinking from the bus.
+// It reads voiceModule (ui already imports it in Drive). "Speaking" only shows while the copilot is
+// answering YOUR question — route guidance audio never changes the ask control.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Bus } from '../../../shared/types.ts';
 import { voiceModule } from '../voice/index.ts';
@@ -19,18 +20,26 @@ const LABELS: Record<OrbState, string> = {
 export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
   const micStatus = useSyncExternalStore(voiceModule.onMicStatus, voiceModule.micStatus);
   const audioReady = useSyncExternalStore(voiceModule.onAudioReady, voiceModule.audioReady);
-  const [speaking, setSpeaking] = useState(false);
   const [pendingReply, setPendingReply] = useState(false);
+  // "answering" = the copilot is delivering the answer to YOUR question (between its reply and the
+  // end of that spoken line). Route reminders never set it, so guidance audio leaves the orb as the
+  // "Tap to ask" control instead of switching it to "Speaking".
+  const [answering, setAnswering] = useState(false);
 
   useEffect(() => {
     const offs = [
-      bus.on('speechStarted', () => setSpeaking(true)),
-      bus.on('speechEnded', () => setSpeaking(false)),
-      bus.on('voiceQuery', () => setPendingReply(true)),
-      bus.on('assistantReply', () => setPendingReply(false)),
-      bus.on('tripReset', () => {
-        setSpeaking(false);
+      bus.on('voiceQuery', () => {
+        setPendingReply(true);
+        setAnswering(false);
+      }),
+      bus.on('assistantReply', () => {
         setPendingReply(false);
+        setAnswering(true);
+      }),
+      bus.on('speechEnded', () => setAnswering(false)),
+      bus.on('tripReset', () => {
+        setPendingReply(false);
+        setAnswering(false);
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -45,7 +54,7 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
           ? 'connecting'
           : micStatus === 'transcribing' || pendingReply
             ? 'thinking'
-            : speaking
+            : answering
               ? 'speaking'
               : 'idle';
 
