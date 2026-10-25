@@ -2,7 +2,7 @@
 
 Default production flow: local EfficientDet-Lite0 → IoU tracking → compact scene JSON → Claude teaching prompt → `visionAdvice` → arbiter → Sonic. Frames stay local; object descriptions and textual context go to Anthropic.
 
-- `index.ts`: target 8 fps, one detector runtime, lifecycle cleanup; an immediate initial CV-confirmed request, then event-driven requests after one second of stable change, with a three-second minimum and no unchanged-scene refresh, one request in flight.
+- `index.ts`: target 8 fps, one detector runtime, lifecycle cleanup; an immediate initial CV-confirmed request, then event-driven requests after one second of stable change, with a three-second minimum and an eight-second review of unchanged nonempty scenes, one request in flight.
 - `detector.ts`: existing local model/WASM, GPU with creation-time CPU fallback, local downscaling and blank-canvas warmup before playback. Warmup creates no road observation.
 - `tracker.ts`: tentative IoU IDs. `cvScene.ts`: repeated observations at score >=0.45, coarse image geometry/motion; no calibrated distance, speed, parking state, lanes or arrival order.
 - `shared/cvScene.ts` / `shared/coaching.ts`: bounded, validated CV JSON and model results; scene and image payloads cannot be mixed.

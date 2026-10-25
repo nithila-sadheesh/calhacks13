@@ -15,7 +15,7 @@ import type {
   VisionAdvice,
 } from '../../../shared/types.ts';
 
-export const PROACTIVE_GAP_MS = 15000;
+export const PROACTIVE_GAP_MS = 6000;
 export const CONVERSATION_QUIET_MS = 8000;
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
 export const REPLAY_GAP_MS = 1000; // shorter gap before an interrupted cue's replay or a repeat

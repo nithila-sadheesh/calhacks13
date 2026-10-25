@@ -60,7 +60,7 @@ function setup() {
     },
   };
 }
-it('runs local CV continuously but sends image-free JSON only for stable scene changes', async () => {
+it('runs local CV continuously but sends image-free JSON for scene changes and bounded ongoing reviews', async () => {
   const s = setup();
   const sent = vi.fn();
   s.bus.on('dataSent', sent);
@@ -145,7 +145,7 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   try {
     await s.module.start(s.ctx);
     await s.advance(15000);
-    expect(s.analyze).toHaveBeenCalledTimes(1);
+    expect(s.analyze).toHaveBeenCalledTimes(2);
     expect(s.advice).toEqual([]);
     expect(coachingStore.get().message).toBeUndefined();
     expect(coachingStore.get().diagnostics?.[0]).toMatchObject({
@@ -182,7 +182,7 @@ it('stays silent when there are no stable objects or Claude is unavailable', asy
   }
 });
 
-it('publishes advice when Claude changes from silence to a useful teaching point', async () => {
+it('reconsiders an unchanged scene after silence and publishes Claude-selected commentary', async () => {
   const s = setup();
   s.analyze.mockResolvedValueOnce({
     shouldSpeak: false,
@@ -193,8 +193,7 @@ it('publishes advice when Claude changes from silence to a useful teaching point
     await s.module.start(s.ctx);
     await s.advance(3000);
     expect(s.advice).toEqual([]);
-    s.move();
-    await s.advance(3000);
+    await s.advance(6000);
     expect(s.advice).toHaveLength(1);
     expect(s.advice[0]?.text).toBe('Keep the car on your left in view.');
   } finally {
@@ -241,7 +240,7 @@ it('passes Claude-selected delivery to the arbiter event', async () => {
   }
 });
 
-it('can recover from a stale response without bringing back periodic refreshes', async () => {
+it('can recover from a stale response while preserving bounded scene reviews', async () => {
   const s = setup();
   let resolve!: (response: CoachingResponse) => void;
   s.analyze.mockImplementationOnce(
@@ -260,7 +259,8 @@ it('can recover from a stale response without bringing back periodic refreshes',
     expect(s.analyze).toHaveBeenCalledTimes(2);
     expect(s.advice).toHaveLength(1);
     await s.advance(10000);
-    expect(s.analyze).toHaveBeenCalledTimes(2);
+    expect(s.analyze).toHaveBeenCalledTimes(3);
+    expect(s.advice).toHaveLength(1);
   } finally {
     s.module.stop();
   }

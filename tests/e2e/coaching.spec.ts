@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('local CV generates image-free coaching through the real arbiter and speech events', async ({
+test('local CV reconsiders initial silence and generates image-free spoken coaching', async ({
   page,
 }) => {
   const batches: Array<{ scene: { tripMs: number; objects: unknown[] }; frames?: unknown }> = [];
@@ -8,8 +8,8 @@ test('local CV generates image-free coaching through the real arbiter and speech
     batches.push(route.request().postDataJSON());
     await route.fulfill({
       json: {
-        shouldSpeak: true,
-        message: 'Watch for cyclists beside parked cars.',
+        shouldSpeak: batches.length > 1,
+        message: batches.length > 1 ? 'Watch for cyclists beside parked cars.' : '',
         reason: 'A cyclist is visible near parked vehicles.',
         observations: ['A cyclist is beside parked vehicles.'],
         uncertainties: ['Its intended movement is unknown.'],
@@ -25,9 +25,10 @@ test('local CV generates image-free coaching through the real arbiter and speech
   await expect(page.locator('video')).toHaveJSProperty('controls', true);
   await page.locator('video').evaluate((video: HTMLVideoElement) => video.play());
   await expect(page.locator('.captions p')).toHaveText('Watch for cyclists beside parked cars.', {
-    timeout: 10000,
+    timeout: 20000,
   });
   await expect(page.locator('.overlay, .status-strip')).toHaveCount(0);
+  expect(batches.length).toBeGreaterThanOrEqual(2);
   expect(batches[0]?.scene.objects.length).toBeGreaterThan(0);
   expect(batches[0]?.frames).toBeUndefined();
   await page.locator('.timeline-collapse > summary').click();

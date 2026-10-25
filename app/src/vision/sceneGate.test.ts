@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createSceneGate, SCENE_SETTLE_MS } from './sceneGate.ts';
+import { createSceneGate, SCENE_REVIEW_MS, SCENE_SETTLE_MS } from './sceneGate.ts';
 import type { CvScene } from '../../../shared/cvScene.ts';
 const scene = (tripMs: number, side: 'left' | 'right' = 'left'): CvScene => ({
   tripMs,
@@ -16,12 +16,14 @@ const scene = (tripMs: number, side: 'left' | 'right' = 'left'): CvScene => ({
     },
   ],
 });
-it('analyzes the initial confirmed scene, then requires stable change without periodic refresh', () => {
+it('analyzes the initial confirmed scene, then reviews stable scenes and debounces changes', () => {
   const gate = createSceneGate();
   expect(gate.ready(scene(0))).toBe(true);
   expect(gate.ready(scene(SCENE_SETTLE_MS))).toBe(true);
   gate.submitted(scene(SCENE_SETTLE_MS));
-  expect(gate.ready(scene(60000))).toBe(false);
+  expect(gate.ready(scene(SCENE_SETTLE_MS + SCENE_REVIEW_MS - 1))).toBe(false);
+  expect(gate.ready(scene(SCENE_SETTLE_MS + SCENE_REVIEW_MS))).toBe(true);
+  gate.submitted(scene(60000));
   expect(gate.ready(scene(60100, 'right'))).toBe(false);
   expect(gate.ready(scene(61100, 'right'))).toBe(true);
 });
