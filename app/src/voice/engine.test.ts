@@ -301,14 +301,14 @@ it('cancels buffered audio and late chunks on a user interruption but preserves 
   s.speak();
   const id = s.context();
   s.receive({ id, type: 'chunk', samples: new Float32Array([0]) });
-  s.engine.interrupt('route');
+  s.engine.interrupt();
   expect(s.nodes[0]?.stop).toHaveBeenCalled();
   expect(s.cancel).toHaveBeenCalledWith(id);
   expect(s.ended).toHaveBeenCalledWith({ id: 'route', interrupted: true });
   s.receive({ id, type: 'chunk', samples: new Float32Array([0]) });
   expect(s.nodes).toHaveLength(1);
   s.speak('urgent', { priority: 0, text: CLIP_TEXT.pedestrianNearby, clipKey: 'pedestrianNearby' });
-  s.engine.interrupt('urgent');
+  s.engine.interrupt();
   expect(s.nodes[1]?.stop).not.toHaveBeenCalled();
   s.engine.stop();
 });

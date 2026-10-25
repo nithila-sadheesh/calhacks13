@@ -90,7 +90,15 @@ export function VoicePanel({ ctx }: PanelProps) {
           aria-label={active ? 'Stop and send' : 'Talk'}
           aria-pressed={active}
           disabled={status === 'transcribing'}
-          onClick={() => voiceModule.toggleTalk()}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || status === 'transcribing') return;
+            event.preventDefault();
+            voiceModule.toggleTalk();
+          }}
+          onClick={(event) => {
+            if (event.detail === 0) voiceModule.toggleTalk();
+          }}
+          onPointerCancel={() => voiceModule.cancelTalk()}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" />

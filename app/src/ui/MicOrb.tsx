@@ -80,7 +80,7 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
   const label = !active ? LABELS.idle : needsSound ? 'Enable sound' : LABELS[state];
 
   const onClick = () => {
-    if (!active) return;
+    if (!active || micStatus === 'transcribing') return;
     if (needsSound) {
       void voiceModule.enableAudio().catch(() => undefined);
       return;
@@ -96,7 +96,16 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
         aria-label={label}
         aria-pressed={state === 'listening' || state === 'connecting'}
         disabled={!active || micStatus === 'transcribing'}
-        onClick={onClick}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          onClick();
+        }}
+        onClick={(event) => {
+          // Pointer activation ran on press; keyboard/assistive activation has detail zero.
+          if (event.detail === 0) onClick();
+        }}
+        onPointerCancel={() => voiceModule.cancelTalk()}
       >
         <OrbIcon state={state} />
       </button>

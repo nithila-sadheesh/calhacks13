@@ -225,9 +225,15 @@ test('a user interruption stops guidance, gets an answer, and does not resume th
   await expect.poll(() => lines.length, { timeout: 8000 }).toBe(1);
   await expect(page.getByText(/^First audible: \d+ ms$/)).toBeVisible();
   const orb = page.locator('.mic-orb');
-  await orb.click();
-  await expect(orb).toHaveAccessibleName('Listening… tap to send');
+  const bounds = await orb.boundingBox();
+  if (!bounds) throw new Error('Microphone button is not visible');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  // The cancellation must arrive while the button is still held, before pointer-up/click.
   await expect.poll(() => cancelled).toContain(lines[0]!.id);
+  await expect(orb).toHaveAccessibleName('Listening… tap to send');
+  await page.mouse.up();
+  await expect(orb).toHaveAccessibleName('Listening… tap to send');
   await expect(page.locator('.captions p')).toHaveText('Spoken lines appear here.');
   await orb.click();
   await expect

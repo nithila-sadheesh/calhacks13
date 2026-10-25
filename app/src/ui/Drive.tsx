@@ -171,8 +171,8 @@ export function Drive({ bus, modules, source }: DriveProps) {
               !live && setError('Could not load the drive video (/demo-drive/video.mp4).')
             }
           />
-          {ctx && <StatusStrip live={live} warning={warningShort} />}
-          {ctx && <VisionOverlay ctx={ctx} />}
+          {ctx && live && <StatusStrip live={live} warning={warningShort} />}
+          {ctx && live && <VisionOverlay ctx={ctx} />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
         <Captions bus={bus} />

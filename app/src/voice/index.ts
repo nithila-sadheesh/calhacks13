@@ -59,7 +59,9 @@ export function createVoiceModule(): AppModule & {
   let controller: AbortController | undefined;
   let off: Array<() => void> = [];
   let version = 0;
+  let beginUserTurn: (() => void) | undefined;
   function stop() {
+    beginUserTurn = undefined;
     version++;
     mic?.cancel();
     mic = undefined;
@@ -113,14 +115,19 @@ export function createVoiceModule(): AppModule & {
       // takes about 2.5 s, past the engine's 1.5 s first-audio deadline, so the first reminder
       // would always fall back to a clip. The transport reconnects by itself if the session drops.
       sonic?.warm();
+      beginUserTurn = () => {
+        // Claim the floor and stop local audio before microphone setup or UI notifications.
+        ctx.bus.emit('voiceActivity', { active: true });
+        engine?.interrupt();
+      };
       mic = createPushToTalk({
         bus: ctx.bus,
         clock: ctx.clock,
         status: (status) => {
-          updateMic(status);
           ctx.bus.emit('voiceActivity', {
             active: status === 'connecting' || status === 'listening' || status === 'transcribing',
           });
+          updateMic(status);
         },
         onError: (error) => {
           microphoneError = microphoneSetupMessage(error);
@@ -174,6 +181,7 @@ export function createVoiceModule(): AppModule & {
       };
     },
     toggleTalk() {
+      if (mic && (micStatus === 'idle' || micStatus === 'error')) beginUserTurn?.();
       mic?.toggle();
     },
     cancelTalk() {
