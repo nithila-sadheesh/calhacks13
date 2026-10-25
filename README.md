@@ -41,7 +41,7 @@ flowchart LR
 - **Video never leaves the phone.** Only a short text description of what the detector sees goes to Claude.
 - **Claude decides what's worth saying** and how it should sound, or stays quiet.
 - **The arbiter** speaks one line at a time, puts the learner's questions first, and keeps lines from piling up.
-- **Built-in guardrails:** Voya never tells the driver to brake, never says a road is clear, and never decides right-of-way. A licensed adult supervises every drive.
+- **Built-in guardrails (Safety/Compliance):** Voya never tells the driver to brake, never says a road is clear, and never decides right-of-way. A licensed adult supervises every drive.
 
 ## Setup steps
 
