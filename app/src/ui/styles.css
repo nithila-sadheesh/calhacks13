@@ -104,54 +104,13 @@ ol {
   outline-offset: 2px;
 }
 
-/* Tap-to-talk microphone in the Voice panel. */
+/* Microphone status in the Voice panel; the microphone itself is the orb. */
 .mic {
   display: grid;
   justify-items: center;
   gap: 0.5rem;
   text-align: center;
   padding: 0.25rem 0;
-}
-
-.panel .mic-button {
-  width: 5.5rem;
-  height: 5.5rem;
-  min-height: 0;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  touch-action: manipulation;
-}
-
-.mic-button svg {
-  width: 2.5rem;
-  height: 2.5rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.panel .mic-button[aria-pressed='true'] {
-  background: var(--urgent);
-  border-color: var(--urgent);
-  color: #fff;
-  animation: mic-pulse 1.4s ease-out infinite;
-}
-
-.panel .mic-button.mic-connecting {
-  background: color-mix(in srgb, var(--warn) 30%, var(--surface-2));
-  border-color: var(--warn);
-  animation: none;
-}
-
-.panel .mic-transcribing {
-  opacity: 0.7;
 }
 
 .exchange {
@@ -162,21 +121,6 @@ ol {
   border-radius: 0.375rem;
   background: var(--surface-2);
   text-align: left;
-}
-
-@keyframes mic-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--urgent) 60%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 1.25rem transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .panel .mic-button[aria-pressed='true'] {
-    animation: none;
-  }
 }
 
 /* Setup screen */

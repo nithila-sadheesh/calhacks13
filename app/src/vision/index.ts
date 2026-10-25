@@ -23,10 +23,10 @@ export const MAX_RESPONSE_AGE_MS = 8000;
 export const ADVICE_TTL_MS = 10000;
 // Local reminders only fill real silences, and the gap varies so they never sound like a timer.
 export const QUIET_GAPS_MS = [12000, 16000, 20000];
+// Until the first line of a trip, a short wait so coaching starts promptly.
+export const FIRST_REMINDER_MS = 4000;
 // A local reminder is not repeated word for word within this window.
 export const REMINDER_REPEAT_MS = 45000;
-// Claude's own lines need this much quiet after the previous line finished.
-export const CLAUDE_MIN_GAP_MS = 5000;
 
 async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<CoachingResponse> {
   const response = await fetch('/api/vision-advice', {
@@ -218,7 +218,10 @@ export function createVisionModule(
           options.periodicReminders !== false &&
           !speakingId &&
           !controller &&
-          tripMs - lastAdviceMs >= QUIET_GAPS_MS[fallbackTurn % QUIET_GAPS_MS.length]!
+          tripMs - lastAdviceMs >=
+            (fallbackTurn === 0 && lastLineMs === undefined
+              ? FIRST_REMINDER_MS
+              : QUIET_GAPS_MS[fallbackTurn % QUIET_GAPS_MS.length]!)
         ) {
           const reminder = fallbackAdvice(scene, fallbackTurn);
           const said = reminders.get(reminder.text);
@@ -338,10 +341,6 @@ export function createVisionModule(
               )
             ) {
               diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });
-              return;
-            }
-            if (speakingId || (lastLineMs !== undefined && now - lastLineMs < CLAUDE_MIN_GAP_MS)) {
-              diagnostic(requestId, { outcome: 'Suppressed: too soon after the previous line' });
               return;
             }
             diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });

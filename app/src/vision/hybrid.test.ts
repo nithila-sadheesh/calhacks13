@@ -162,7 +162,8 @@ it('fills only real silences with local reminders, without repeating or keeping 
   s.analyze.mockResolvedValue({ shouldSpeak: false, message: '', reason: 'No stronger cue.' });
   try {
     await s.module.start(s.ctx);
-    await s.advance(11500);
+    // The first reminder of a trip comes promptly; later ones wait for longer silences.
+    await s.advance(3500);
     expect(s.advice).toHaveLength(0);
     await s.advance(1000);
     expect(s.advice).toHaveLength(1);
@@ -193,7 +194,7 @@ it('fills only real silences with local reminders, without repeating or keeping 
   }
 });
 
-it("forwards Claude's delivery, reports quiet time and holds lines that follow speech too closely", async () => {
+it("forwards Claude's delivery and reports quiet time, leaving spacing to the arbiter", async () => {
   const s = setup();
   const delivery = { emotion: 'determined', pace: 'normal', speed: 1.1, volume: 1.15 } as const;
   s.analyze.mockResolvedValueOnce({
@@ -225,10 +226,9 @@ it("forwards Claude's delivery, reports quiet time and holds lines that follow s
     s.move();
     await s.advance(3500);
     expect(s.analyze).toHaveBeenCalledTimes(2);
-    expect(s.advice).toHaveLength(1);
-    expect(coachingStore.get().diagnostics?.at(-1)?.outcome).toBe(
-      'Suppressed: too soon after the previous line',
-    );
+    // A line right after speech is still sent; the arbiter queues it behind its spacing gap.
+    expect(s.advice).toHaveLength(2);
+    expect(s.advice[1]?.text).toBe('Track the car now on your right.');
   } finally {
     s.module.stop();
   }

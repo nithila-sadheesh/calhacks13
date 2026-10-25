@@ -16,6 +16,7 @@ import type {
 
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
 export const REPLAY_GAP_MS = 1000; // shorter gap before an interrupted cue's replay or a repeat
+export const VISION_GAP_MS = 3000; // quiet before video coaching, so lines never run back to back
 export const ALERT_COOLDOWN_MS = 8000; // per alert kind
 export const REPEAT_TTL_MS = 10000;
 export const ANSWER_TTL_MS = 15000; // a spoken answer older than this is no longer an answer
@@ -205,7 +206,7 @@ export function step(
         priority: 1,
         earliestMs: advice.tripMs,
         expiresMs: advice.expiresMs,
-        gapMs: 1000,
+        gapMs: VISION_GAP_MS,
         why: advice.reason,
         replayed: false,
         ...(advice.delivery ? { delivery: advice.delivery } : {}),

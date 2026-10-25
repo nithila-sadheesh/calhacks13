@@ -20,7 +20,7 @@ test('the microphone opens on WebKit while speech playback is unlocked', async (
     page.evaluate(() => (navigator as { audioSession?: { type: string } }).audioSession?.type);
   expect(await sessionType()).toBe('playback');
 
-  await page.getByRole('button', { name: 'Talk' }).click();
+  await page.getByRole('button', { name: 'Tap to ask' }).click();
   const status = page.locator('.mic p[role=status]');
   await expect(status).toHaveText('Listening… tap again when you’re done.');
   await page.waitForTimeout(1500);

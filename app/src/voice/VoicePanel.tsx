@@ -46,7 +46,6 @@ export function VoicePanel({ ctx }: PanelProps) {
         : 'Repeating…';
   const actionResult = (action: keyof typeof ACTION_RESULTS) =>
     action === 'repeat' ? repeatResult : ACTION_RESULTS[action];
-  const active = status === 'connecting' || status === 'listening';
   useEffect(() => {
     const hidden = () => {
       if (document.hidden) voiceModule.cancelTalk();
@@ -79,19 +78,8 @@ export function VoicePanel({ ctx }: PanelProps) {
             : 'Sound is off. Enable it to hear reminders and warnings.'}
       </p>
       <p>{last ? `First audible: ${Math.round(last.firstAudibleMs)} ms` : 'Nothing spoken yet.'}</p>
+      {/* The microphone itself is the orb under the captions; this panel only reports on it. */}
       <div className="mic">
-        <button
-          type="button"
-          className={`mic-button mic-${status}`}
-          aria-label={active ? 'Stop and send' : 'Talk'}
-          aria-pressed={active}
-          onClick={() => voiceModule.toggleTalk()}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" />
-            <path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6" />
-          </svg>
-        </button>
         <p role="status">{MIC_LABELS[status]}</p>
         {command && (!query || command.transcript !== query.transcript) && (
           <p className="muted">
