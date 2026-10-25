@@ -98,6 +98,7 @@ Assistant fixed lines (`server/assistant.ts`, `app/src/assistant/`):
 - `I can only answer driving-related questions.` (Claude's reply to off-topic requests)
 - `That's for your supervisor to judge. Keep your eyes on the road.` (replaces any generated line the safety filter blocks)
 - `Sorry, I can't answer that right now.` (the request failed or Claude declined)
+- `Sorry, I didn't catch that. Could you say it again?` (Claude, when a transcript is too fragmentary to guess)
 - `Nothing to repeat yet.` (the arbiter, when "repeat" has no earlier line to replay)
 
 Claude's answers and its route-reminder wording are generated, so they are not listed here. Every generated line must pass `shared/safeWording.ts` before it can be spoken or shown.

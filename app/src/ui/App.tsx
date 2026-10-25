@@ -25,7 +25,9 @@ export function App({ bus, modules }: AppProps) {
           <li>Video frames stay on the device.</li>
           <li>Spoken reminder text is sent to Cartesia Sonic.</li>
           <li>
-            Microphone audio is sent to Cartesia Ink only between your two taps of the talk button.
+            With hands-free on, the microphone listens for “Voya” on this device only. Audio is sent
+            to Cartesia Ink only after you say “Voya” or tap the talk button, until you pause or tap
+            again.
           </li>
           <li>
             Your spoken questions and a short trip summary (recent reminders, upcoming streets,
@@ -52,7 +54,7 @@ export function App({ bus, modules }: AppProps) {
       </div>
       <p className="muted">
         Live uses this device&apos;s rear camera to spot pedestrians and its location to time route
-        reminders. The microphone records only between your two taps of the talk button.
+        reminders. Say “Voya” (or tap the talk button) to ask a question hands-free.
       </p>
     </main>
   );

@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { approvedText, fallbackKey } from './config.ts';
+import { describe, expect, it } from 'vitest';
+import { approvedText, BASE_KEYTERMS, fallbackKey, inkKeyterms } from './config.ts';
 it('maps the exact approved templates to their conservative fallback', () => {
   expect(
     fallbackKey('Left turn ahead onto Ashby Avenue. Check for pedestrians before turning.'),
@@ -18,4 +18,14 @@ it('rejects changed phrases and unsupported directions', () => {
   );
   expect(approvedText('The lane is clear.')).toBe(false);
   expect(approvedText('Brake now.')).toBe(false);
+});
+
+describe('Ink keyterms', () => {
+  it('puts the voice commands first and adds each route street once', () => {
+    const terms = inkKeyterms(['Oxford Street', undefined, ' Oxford Street ', 'Center Street']);
+    expect(terms.slice(0, 3)).toEqual(['repeat that', 'repeat', 'say that again']);
+    expect(terms.filter((t) => t === 'Oxford Street')).toHaveLength(1);
+    expect(terms).toContain('Center Street');
+    expect(terms).toHaveLength(BASE_KEYTERMS.length + 2);
+  });
 });

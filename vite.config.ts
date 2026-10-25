@@ -56,6 +56,9 @@ function devApi(): Plugin {
           response.headers.forEach((value, key) => res.setHeader(key, value));
           res.end(Buffer.from(await response.arrayBuffer()));
         } catch (e) {
+          // The browser went away mid-request (tab closed, test ended): nothing to report, and
+          // passing it on would put Vite's error overlay over every open page.
+          if (req.destroyed || res.destroyed || (e as Error).message === 'aborted') return;
           next(e);
         }
       });

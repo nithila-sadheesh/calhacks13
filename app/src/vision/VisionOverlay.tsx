@@ -34,6 +34,7 @@ export function VisionOverlay({ ctx }: PanelProps) {
           style={{ top: '0.5rem', bottom: 'auto', background: '#7f1d1d' }}
         >
           Camera paused. Route reminders only.
+          {snapshot.health.reason ? ` (${snapshot.health.reason})` : ''}
         </span>
       )}
       {reason && <span className="overlay-note">{reason}</span>}

@@ -2,8 +2,29 @@ import { CARTESIA_VERSION } from './config.ts';
 import { encodePcm } from './pcm.ts';
 
 export type InkSession = { send(samples: Float32Array): void; finish(): void; cancel(): void };
+
+// Ink recommends ~100 ms audio frames; the capture worklet delivers ~20 ms.
+export const FRAME_S = 0.1;
+// Ink-2 limits: at most 100 keyterms, 1200 characters in all.
+export const MAX_KEYTERMS = 100;
+export const MAX_KEYTERM_CHARS = 1200;
+
+// Query string by hand: Ink wants multi-word keyterms with %20, and URLSearchParams writes '+'.
+export function inkQuery(params: Record<string, string>, keyterms: readonly string[] = []): string {
+  const parts = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
+  let chars = 0;
+  for (const term of keyterms.slice(0, MAX_KEYTERMS)) {
+    chars += term.length;
+    if (chars > MAX_KEYTERM_CHARS) break;
+    parts.push(`keyterm=${encodeURIComponent(term)}`);
+  }
+  return parts.join('&');
+}
+
 export async function openInk(options: {
   sampleRate: number;
+  // Words and phrases Ink should favor: the voice commands, driving terms, street names.
+  keyterms?: readonly string[];
   signal: AbortSignal;
   onTranscript: (text: string) => void;
   onComplete: () => void;
@@ -18,14 +39,17 @@ export async function openInk(options: {
   if (!body || typeof body !== 'object' || !('token' in body) || typeof body.token !== 'string')
     throw new Error('Invalid Ink token');
   signal.throwIfAborted();
-  const query = new URLSearchParams({
-    access_token: body.token,
-    cartesia_version: CARTESIA_VERSION,
-    model: 'ink-2',
-    encoding: 'pcm_s16le',
-    sample_rate: String(options.sampleRate),
-    language: 'en',
-  });
+  // No `language`: the docs list it for ink-whisper only.
+  const query = inkQuery(
+    {
+      access_token: body.token,
+      cartesia_version: CARTESIA_VERSION,
+      model: 'ink-2',
+      encoding: 'pcm_s16le',
+      sample_rate: String(options.sampleRate),
+    },
+    options.keyterms,
+  );
   const ws = new WebSocket(`wss://api.cartesia.ai/stt/websocket?${query}`);
   let finishing = false;
   let completed = false;
@@ -105,14 +129,33 @@ export async function openInk(options: {
     if (!closed) failed();
     else cancel();
   };
+  const frameSamples = Math.round(options.sampleRate * FRAME_S);
+  let frame: Float32Array[] = [];
+  let frameLength = 0;
+  const flush = () => {
+    if (frameLength === 0) return;
+    const joined = new Float32Array(frameLength);
+    let offset = 0;
+    for (const chunk of frame) {
+      joined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    frame = [];
+    frameLength = 0;
+    ws.send(encodePcm(joined));
+  };
   return {
     send(samples) {
-      if (!closed && !finishing && !signal.aborted && ws.readyState === WebSocket.OPEN)
-        ws.send(encodePcm(samples));
+      if (closed || finishing || signal.aborted || ws.readyState !== WebSocket.OPEN) return;
+      frame.push(samples);
+      frameLength += samples.length;
+      if (frameLength >= frameSamples) flush();
     },
     finish() {
       if (closed || finishing) return;
       finishing = true;
+      // The last partial frame holds the end of the sentence.
+      if (ws.readyState === WebSocket.OPEN) flush();
       ws.send('finalize');
       timer = setTimeout(() => {
         if (!closed) {

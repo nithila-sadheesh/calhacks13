@@ -100,6 +100,17 @@ describe('tap-to-talk', () => {
     expect(s.commands).toHaveBeenCalledTimes(1);
   });
 
+  it("joins Ink's pieces exactly as sent, so a word split across two pieces stays whole", async () => {
+    const s = setup();
+    await s.mic.start();
+    s.callbacks().onTranscript(' Re');
+    s.callbacks().onTranscript('peat that');
+    s.callbacks().onTranscript('.');
+    s.mic.toggle();
+    s.callbacks().onComplete();
+    expect(s.commands).toHaveBeenCalledWith({ kind: 'repeat', transcript: 'Repeat that.' });
+  });
+
   it('a pause mid-sentence does not end the recording', async () => {
     const s = setup();
     await s.mic.start();
@@ -246,5 +257,75 @@ describe('tap-to-talk', () => {
     old.onComplete();
     expect(s.commands).not.toHaveBeenCalled();
     s.mic.cancel();
+  });
+});
+
+describe('hands-free request (started by the wake word)', () => {
+  function handsFree() {
+    let t = 0;
+    const bus = createBus();
+    const commands = vi.fn();
+    const queries = vi.fn();
+    bus.on('voiceCommand', commands);
+    bus.on('voiceQuery', queries);
+    let callbacks!: Parameters<typeof openInk>[0];
+    const finish = vi.fn();
+    const ink = vi.fn<typeof openInk>().mockImplementation(async (o) => {
+      callbacks = o;
+      return { send: vi.fn(), finish, cancel: vi.fn() };
+    });
+    let feed!: (samples: Float32Array) => void;
+    const shared = vi.fn<typeof openCapture>().mockImplementation(async (onSamples) => {
+      feed = onSamples;
+      return { sampleRate: 48000, stop: vi.fn() };
+    });
+    const mic = createPushToTalk({
+      bus,
+      clock: { nowMs: () => 0, onReset: () => () => {} },
+      status: () => {},
+      ink,
+      now: () => t,
+      setTimer: () => undefined,
+      clearTimer: () => {},
+    });
+    const speak = (level: number, ms: number) => {
+      for (let e = 0; e < ms; e += 20) {
+        feed(new Float32Array(960).fill(level));
+        t += 20;
+      }
+    };
+    return { mic, shared, speak, finish, commands, queries, callbacks: () => callbacks };
+  }
+
+  it('ends on a pause, strips the wake word, and runs the command', async () => {
+    const s = handsFree();
+    await s.mic.startHandsFree(s.shared);
+    expect(s.mic.listening()).toBe(true);
+    s.speak(0.002, 300);
+    s.speak(0.1, 1200);
+    expect(s.finish).not.toHaveBeenCalled();
+    s.speak(0.002, 1600);
+    expect(s.finish).toHaveBeenCalledTimes(1);
+    s.callbacks().onTranscript(' Voya, keep that.');
+    s.callbacks().onComplete();
+    expect(s.commands).toHaveBeenCalledWith({ kind: 'repeat', transcript: 'keep that.' });
+  });
+
+  it('gives up quietly when nobody speaks after the wake word', async () => {
+    const s = handsFree();
+    await s.mic.startHandsFree(s.shared);
+    s.speak(0.002, 5100);
+    expect(s.finish).toHaveBeenCalledTimes(1);
+    s.callbacks().onComplete();
+    expect(s.commands).not.toHaveBeenCalled();
+    expect(s.queries).not.toHaveBeenCalled();
+  });
+
+  it('a tap during a hands-free request ends it at once', async () => {
+    const s = handsFree();
+    await s.mic.startHandsFree(s.shared);
+    s.speak(0.1, 400);
+    s.mic.toggle();
+    expect(s.finish).toHaveBeenCalledTimes(1);
   });
 });

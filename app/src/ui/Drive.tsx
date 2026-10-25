@@ -13,7 +13,7 @@ import { createLive } from '../replay/live.ts';
 import { createReplay } from '../replay/replay.ts';
 import { loadFixtures } from '../replay/fixtures.ts';
 import { VisionOverlay } from '../vision/VisionOverlay.tsx';
-import { voiceModule } from '../voice/index.ts';
+import { handsFreePreferred, voiceModule } from '../voice/index.ts';
 import { VoicePanel } from '../voice/VoicePanel.tsx';
 import { Captions } from './Captions.tsx';
 import { DataUsePanel } from './DataUsePanel.tsx';
@@ -106,6 +106,8 @@ export function Drive({ bus, modules, source }: DriveProps) {
     try {
       // Unlock audio first, while still inside the tap: iOS refuses it after an await.
       const sound = realVoice ? voiceModule.enableAudio() : Promise.resolve();
+      const handsFree = realVoice && handsFreePreferred();
+      if (handsFree) voiceModule.wakeForHandsFree();
       sound.catch(() => {}); // still awaited below; this only stops an early camera error leaving it unhandled
       const closeCamera = await openCamera(video);
       const releaseWake = holdWakeLock();
@@ -116,6 +118,8 @@ export function Drive({ bus, modules, source }: DriveProps) {
       await sound;
       live.start();
       setTrip('running');
+      // Listens for "Voya" on the device; a failure shows in the Voice panel, the drive goes on.
+      if (handsFree) void voiceModule.startHandsFree();
     } catch (e: unknown) {
       releaseRef.current?.();
       releaseRef.current = undefined;

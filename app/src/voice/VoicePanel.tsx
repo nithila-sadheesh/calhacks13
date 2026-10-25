@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { voiceModule } from './index.ts';
+import { voiceModule, type HandsFree } from './index.ts';
+import { WAKE_WORD } from './wakeword.ts';
 import { useEvents } from '../../../shared/useEvents.ts';
 import type { PanelProps } from '../../../shared/types.ts';
 import type { MicStatus } from './pushToTalk.ts';
@@ -7,10 +8,26 @@ import type { MicStatus } from './pushToTalk.ts';
 const MIC_LABELS: Record<MicStatus, string> = {
   idle: 'Tap the microphone and ask anything, or say “repeat that”, “mute” or “unmute”.',
   connecting: 'Starting microphone…',
-  listening: 'Listening… tap again when you’re done.',
+  listening: 'Listening… pause or tap again when you’re done.',
   transcribing: 'Recognizing…',
   error: 'Microphone or voice connection failed. Check permissions and tap to try again.',
 };
+function handsFreeLabel(h: HandsFree): string {
+  switch (h.state) {
+    case 'on':
+      return `Hands-free on: say “${WAKE_WORD}”, then your question.`;
+    case 'starting':
+      return 'Starting hands-free…';
+    case 'off':
+      return 'Hands-free is off.';
+    case 'untaught':
+      return `Teach hands-free your voice: you'll say “${WAKE_WORD}” three times.`;
+    case 'teaching':
+      return `Say “${WAKE_WORD}” after the chime (${h.take} of ${h.of}).`;
+    case 'error':
+      return h.message;
+  }
+}
 const COMMAND_LABELS = { repeat: 'Repeat', mute: 'Mute', unmute: 'Unmute' } as const;
 // Shown, never spoken: the assistant stays silent when speech was unclear.
 const NOT_HEARD = "Didn't catch that. Tap and try again.";
@@ -25,6 +42,8 @@ export function VoicePanel({ ctx }: PanelProps) {
   // Read from the player, so it is right whichever button unlocked audio (Start drive does too).
   const audioReady = useSyncExternalStore(voiceModule.onAudioReady, voiceModule.audioReady);
   const status = useSyncExternalStore(voiceModule.onMicStatus, voiceModule.micStatus);
+  const handsFree = useSyncExternalStore(voiceModule.onHandsFree, voiceModule.handsFree);
+  const handsFreeActive = handsFree.state === 'on' || handsFree.state === 'starting';
   const started = useEvents(ctx.bus, 'speechStarted');
   const commands = useEvents(ctx.bus, 'voiceCommand');
   const decisions = useEvents(ctx.bus, 'arbiterDecision');
@@ -79,6 +98,30 @@ export function VoicePanel({ ctx }: PanelProps) {
             : 'Sound is off. Enable it to hear reminders and warnings.'}
       </p>
       <p>{last ? `First audible: ${Math.round(last.firstAudibleMs)} ms` : 'Nothing spoken yet.'}</p>
+      <div className="hands-free">
+        <p role="status">{handsFreeLabel(handsFree)}</p>
+        <div className="hands-free-actions">
+          {handsFree.state === 'untaught' || handsFree.state === 'error' ? (
+            <button type="button" onClick={() => void voiceModule.teachWakeWord()}>
+              {handsFree.state === 'error' ? 'Try again' : `Teach “${WAKE_WORD}”`}
+            </button>
+          ) : handsFree.state === 'teaching' ? null : (
+            <>
+              <button
+                type="button"
+                onClick={() => voiceModule.setHandsFreePreferred(!handsFreeActive)}
+              >
+                {handsFreeActive ? 'Turn off hands-free' : 'Turn on hands-free'}
+              </button>
+              {handsFree.state === 'on' && (
+                <button type="button" onClick={() => void voiceModule.teachWakeWord()}>
+                  Re-teach
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
       <div className="mic">
         <button
           type="button"
@@ -92,7 +135,11 @@ export function VoicePanel({ ctx }: PanelProps) {
             <path d="M18 11a6 6 0 0 1-12 0M12 17v4M9 21h6" />
           </svg>
         </button>
-        <p role="status">{MIC_LABELS[status]}</p>
+        <p role="status">
+          {status === 'idle' && handsFree.state === 'on'
+            ? `Say “${WAKE_WORD}”, or tap the microphone, then ask anything.`
+            : MIC_LABELS[status]}
+        </p>
         {command && (!query || command.transcript !== query.transcript) && (
           <p className="muted">
             Heard: {COMMAND_LABELS[command.kind]}
@@ -111,8 +158,8 @@ export function VoicePanel({ ctx }: PanelProps) {
         )}
       </div>
       <p className="muted">
-        Microphone audio goes to Cartesia only between your two taps; questions go to Claude. For
-        the supervisor or a parked learner.
+        Hands-free listens for “{WAKE_WORD}” on this device only. Microphone audio goes to Cartesia
+        only after you say it or tap, until you pause or tap again; questions go to Claude.
       </p>
     </section>
   );

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { openInk } from './ink.ts';
+import { inkQuery, MAX_KEYTERMS, openInk } from './ink.ts';
 class Socket {
   static OPEN = 1;
   static last: Socket;
@@ -32,7 +32,7 @@ class Socket {
 async function flush() {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 }
-function setup() {
+function setup(keyterms?: string[]) {
   vi.useFakeTimers();
   vi.stubGlobal('WebSocket', Socket);
   vi.stubGlobal(
@@ -46,6 +46,7 @@ function setup() {
   const pending = openInk({
     sampleRate: 48000,
     signal: controller.signal,
+    keyterms,
     onTranscript,
     onComplete,
     onError,
@@ -108,4 +109,33 @@ it('times out a transcription with no final response', async () => {
   await vi.advanceTimersByTimeAsync(5000);
   expect(s.onError).toHaveBeenCalledTimes(1);
   expect(Socket.last.readyState).toBe(3);
+});
+it('sends audio in ~100 ms frames and flushes the last partial frame before finalizing', async () => {
+  const s = setup();
+  await flush();
+  Socket.last.open();
+  const ink = await s.pending;
+  for (let i = 0; i < 4; i++) ink.send(new Float32Array(960)); // 4 x 20 ms
+  expect(Socket.last.sent).toHaveLength(0);
+  ink.send(new Float32Array(960)); // 100 ms reached
+  expect(Socket.last.sent).toHaveLength(1);
+  expect((Socket.last.sent[0] as ArrayBuffer).byteLength).toBe(4800 * 2);
+  ink.send(new Float32Array(960));
+  ink.finish();
+  expect((Socket.last.sent[1] as ArrayBuffer).byteLength).toBe(960 * 2);
+  expect(Socket.last.sent[2]).toBe('finalize');
+});
+it('asks Ink to favor the keyterms and leaves out the ink-whisper-only language option', async () => {
+  const s = setup(['repeat that', 'Oxford Street']);
+  await flush();
+  Socket.last.open();
+  await s.pending;
+  expect(Socket.last.url).toContain('keyterm=repeat%20that&keyterm=Oxford%20Street');
+  expect(new URL(Socket.last.url).searchParams.has('language')).toBe(false);
+});
+it('keeps keyterms within Ink-2 limits', () => {
+  const many = Array.from({ length: 150 }, (_, i) => `term${i}`);
+  expect(inkQuery({}, many).split('&')).toHaveLength(MAX_KEYTERMS);
+  const long = Array.from({ length: 30 }, () => 'x'.repeat(50));
+  expect(inkQuery({}, long).split('&')).toHaveLength(24);
 });

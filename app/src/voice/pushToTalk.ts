@@ -5,7 +5,8 @@
 // MAX_LISTEN_MS only stops a microphone left on by mistake. Mic audio goes to Ink only between
 // the taps. Audio captured while Ink is still connecting is buffered and sent once it opens.
 import type { Bus, TripClock } from '../../../shared/types.ts';
-import { commandFromTranscript } from './pcm.ts';
+import { commandFromTranscript, stripWakeWord } from './pcm.ts';
+import { createSpeechTracker } from './speechEnd.ts';
 import { openCapture, type CaptureSession } from './capture.ts';
 import { openInk, type InkSession } from './ink.ts';
 
@@ -21,6 +22,8 @@ export function createPushToTalk(options: {
   status: (status: MicStatus) => void;
   capture?: typeof openCapture;
   ink?: typeof openInk;
+  keyterms?: readonly string[];
+  now?: () => number;
   setTimer?: (cb: () => void, ms: number) => unknown;
   clearTimer?: (timer: unknown) => void;
 }) {
@@ -39,6 +42,8 @@ export function createPushToTalk(options: {
     transcript: string;
     timer?: unknown;
     hearing?: boolean;
+    // Hands-free only: no second tap, so a pause after speech ends the request.
+    speech?: ReturnType<typeof createSpeechTracker>;
   };
   let queries = 0;
   let current: Session | undefined;
@@ -96,7 +101,9 @@ export function createPushToTalk(options: {
     session.ink.finish();
   }
 
-  async function start() {
+  // `capture` lets a hands-free session read the shared microphone (with the audio said right after
+  // the wake word); `handsFree` ends the request on a pause instead of a second tap.
+  async function start(mode: { capture?: typeof openCapture; handsFree?: boolean } = {}) {
     cancel();
     const session: Session = {
       controller: new AbortController(),
@@ -107,10 +114,12 @@ export function createPushToTalk(options: {
       reported: false,
       transcript: '',
     };
+    if (mode.handsFree)
+      session.speech = createSpeechTracker(options.now ?? (() => performance.now()));
     current = session;
     options.status('connecting');
     try {
-      const capture = await (options.capture ?? openCapture)((samples) => {
+      const capture = await (mode.capture ?? options.capture ?? openCapture)((samples) => {
         if (current !== session || !session.listening) return;
         // "Listening" means audio is really being recorded, not just that the tap happened:
         // anything said before the microphone starts is lost.
@@ -124,13 +133,18 @@ export function createPushToTalk(options: {
           const max = MAX_BUFFERED_S * (session.capture?.sampleRate ?? 48000);
           while (session.pendingSamples > max && session.pending.length > 1)
             session.pendingSamples -= session.pending.shift()!.length;
+          session.speech?.push(samples);
+          if (session.speech?.ended()) finish(session);
           return;
         }
         try {
           send(session, samples);
         } catch {
           fail(session);
+          return;
         }
+        session.speech?.push(samples);
+        if (session.speech?.ended()) finish(session);
       }, session.controller.signal);
       session.capture = capture;
       if (current !== session || !session.listening) {
@@ -142,14 +156,17 @@ export function createPushToTalk(options: {
       const ink = await (options.ink ?? openInk)({
         sampleRate: capture.sampleRate,
         signal: session.controller.signal,
+        keyterms: options.keyterms,
         onTranscript(text) {
           if (current !== session) return;
-          // Collected until the second tap; the whole utterance is interpreted in onComplete.
-          session.transcript = `${session.transcript} ${text}`.replace(/\s+/g, ' ').trim();
+          // Ink's text pieces are deltas that carry their own spacing; joined as they arrive.
+          // Adding separators split words ("re peat") and put spaces before punctuation.
+          session.transcript += text;
         },
         onComplete() {
           if (current !== session || session.listening) return;
-          const { transcript } = session;
+          // "Voya, repeat that" said in one breath can leave the wake word at the start.
+          const transcript = stripWakeWord(session.transcript).trim();
           const kind = commandFromTranscript(transcript);
           current = undefined;
           close(session);
@@ -190,7 +207,10 @@ export function createPushToTalk(options: {
       if (session?.listening) finish(session);
       else void start();
     },
-    start,
+    start: () => start(),
+    // Started by the wake word: reads `capture` (the shared microphone) and ends on a pause.
+    startHandsFree: (capture: typeof openCapture) => start({ capture, handsFree: true }),
+    listening: () => current?.listening === true,
     finish() {
       if (current) finish(current);
     },

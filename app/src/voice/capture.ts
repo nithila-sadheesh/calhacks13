@@ -26,6 +26,14 @@ export function prepareCapture(): void {
   sharedContext();
 }
 
+// Call inside a tap: iOS only lets an audio context start from a user gesture. Hands-free opens
+// the microphone a few awaits after Start drive, outside the gesture, so it is woken here first.
+export function wakeCaptureContext(): void {
+  void sharedContext()
+    .context.resume()
+    .catch(() => {});
+}
+
 export function disposeCapture(): void {
   const entry = shared;
   shared = undefined;
