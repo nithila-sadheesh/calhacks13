@@ -48,9 +48,7 @@ flowchart LR
 ### Try it (no install)
 
 1. Open the **[live app](https://learner-copilot-ten.vercel.app?_vercel_share=H4bC3GofUEuPJZu2FCiWokznIXFJFDZJ)** in Chrome or on your phone, and tick the supervisor checkbox.
-2. Pick a mode:
-   - **Load demo drive** (laptop): click **Enable replay sound**, then press play.
-   - **Start live drive** (phone in a car): tap **Start drive** and allow camera, location and mic.
+2. Pick **Start live drive** (phone in a car): tap **Start drive** and allow camera, location and mic.
 3. Tap the **mic** to ask a question; tap again to send.
 4. Open **Timeline** to see every decision, and **Data use** to see what left the device.
 
