@@ -8,7 +8,11 @@ import type {
 } from '../../../shared/types.ts';
 import {
   ALERT_COOLDOWN_MS,
+  MAX_PROACTIVE_GAP_MS,
+  PROACTIVE_BACKOFF_MS,
   PROACTIVE_GAP_MS,
+  PROACTIVE_WINDOW_MS,
+  proactiveGapMs,
   CONVERSATION_QUIET_MS,
   ANSWER_TTL_MS,
   CAMERA_PAUSED,
@@ -782,19 +786,40 @@ it('limits proactive advice frequency and leaves quiet time after a requested an
   h.end(1000);
   h.send({ type: 'advice', advice: vision('too-soon', 2000) }, 2000);
   expect(h.decisions).toContainEqual(['too-soon', 'dropped', 'coaching cooldown']);
-  h.send({ type: 'advice', advice: vision('later', PROACTIVE_GAP_MS) }, PROACTIVE_GAP_MS);
+  const T = PROACTIVE_GAP_MS;
+  h.send({ type: 'advice', advice: vision('later', T) }, T);
   expect(h.speaks.at(-1)?.sourceId).toBe('later');
-  h.end(PROACTIVE_GAP_MS + 1000);
+  h.end(T + 1000);
   h.send(
     {
       type: 'answer',
-      reply: { id: 'a1', queryId: 'q1', text: 'Check your mirrors.', tripMs: 20000 },
+      reply: { id: 'a1', queryId: 'q1', text: 'Check your mirrors.', tripMs: T + 5000 },
     },
-    20000,
+    T + 5000,
   );
-  h.end(22000);
-  h.send({ type: 'cue', cue: cue({ earliestMs: 23000, expiresMs: 40000 }) }, 23000);
+  h.end(T + 7000);
+  h.send({ type: 'cue', cue: cue({ earliestMs: T + 8000, expiresMs: T + 25000 }) }, T + 8000);
   expect(h.decisions).toContainEqual(['cue-1', 'dropped', 'conversation has the floor']);
+});
+
+it('backs proactive advice off as lines accumulate, then recovers after a quiet stretch', () => {
+  expect(proactiveGapMs([0], 1000)).toBe(PROACTIVE_GAP_MS);
+  expect(proactiveGapMs([0, 30000], 31000)).toBe(PROACTIVE_GAP_MS + PROACTIVE_BACKOFF_MS);
+  expect(proactiveGapMs([0, 1, 2, 3, 4, 5, 6], 10)).toBe(MAX_PROACTIVE_GAP_MS);
+  expect(proactiveGapMs([0, 30000], PROACTIVE_WINDOW_MS + 1)).toBe(PROACTIVE_GAP_MS);
+
+  const h = new Harness();
+  h.send({ type: 'advice', advice: vision('first') }, 0);
+  h.end(1000);
+  const second = PROACTIVE_GAP_MS;
+  h.send({ type: 'advice', advice: vision('second', second) }, second);
+  h.end(second + 1000);
+  const tooSoon = second + PROACTIVE_GAP_MS;
+  h.send({ type: 'advice', advice: vision('third-early', tooSoon) }, tooSoon);
+  expect(h.decisions).toContainEqual(['third-early', 'dropped', 'coaching cooldown']);
+  const third = second + PROACTIVE_GAP_MS + PROACTIVE_BACKOFF_MS;
+  h.send({ type: 'advice', advice: vision('third', third) }, third);
+  expect(h.speaks.at(-1)?.sourceId).toBe('third');
 });
 
 it('releases the floor when a new microphone attempt is cancelled instead of waiting for an obsolete answer', () => {

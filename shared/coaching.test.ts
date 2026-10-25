@@ -75,8 +75,16 @@ it('blocks the confusing stop-sign applicability phrase and validates delivery w
   for (const text of [
     'Stop sign on the right; check which approach it controls.',
     'Check which way the stop sign controls.',
+    "Check the cross street; the other approaches' controls aren't visible here.",
+    'Watch which direction the stop sign applies to.',
+    'Cross-street controls are not visible yet.',
   ])
     expect(validCoachingText(text)).toBe(false);
+  for (const text of [
+    'Track the cyclist on your right while checking passing space.',
+    'Stop sign ahead; prepare for a complete stop.',
+  ])
+    expect(validCoachingText(text)).toBe(true);
   const delivery = { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 };
   const response = {
     shouldSpeak: true,

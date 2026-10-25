@@ -9,6 +9,8 @@ export type CoachingRequest = {
   scene?: CvScene;
   previousScenes?: CvScene[];
   recentAdvice: string[];
+  // Whole seconds since vision last suggested a spoken line, so Claude can raise its bar.
+  secondsSinceAdvice?: number;
   sceneMemory?: SceneMemory[];
 };
 export type CoachingResponse = {
@@ -59,6 +61,8 @@ export function parseSceneMemory(value: unknown, newestTripMs: number): SceneMem
 export const MAX_COACHING_BODY_BYTES = 800_000;
 export const MAX_ADVICE_CHARS = 180;
 
+const validSeconds = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 86_400;
 const hasControl = (value: string) => [...value].some((char) => char.charCodeAt(0) < 32);
 
 export function validCoachingText(value: unknown): value is string {
@@ -71,7 +75,7 @@ export function validCoachingText(value: unknown): value is string {
   )
     return false;
   if (
-    /\b(?:which|what)\s+(?:approach|way|direction)[^.!?]{0,80}\b(?:controls?|governs?)\b|\b(?:check|determine|identify)[^.!?]{0,60}\bstop sign[^.!?]{0,50}\bcontrols?\b/i.test(
+    /\b(?:which|what)\s+(?:approach|way|direction|street|road)s?[^.!?]{0,80}\b(?:controls?|governs?|applies|apply)\b|\b(?:check|determine|identify|watch|see|notice)[^.!?]{0,60}\bstop sign[^.!?]{0,50}\b(?:controls?|applies|apply)\b|\bcontrols?\b[^.!?]{0,40}\b(?:aren't|are not|isn't|is not|not)\s+(?:visible|shown|clear|known)\b|\b(?:approach(?:es)?|cross street|other (?:street|road|way|direction)s?)[^.!?]{0,40}\bcontrols?\b/i.test(
       value,
     )
   )
@@ -154,6 +158,10 @@ export function parseCoachingRequest(value: unknown): CoachingRequest | undefine
       }
     }
     const result: CoachingRequest = { scene, previousScenes, recentAdvice: item.recentAdvice };
+    if (item.secondsSinceAdvice !== undefined) {
+      if (!validSeconds(item.secondsSinceAdvice)) return;
+      result.secondsSinceAdvice = item.secondsSinceAdvice;
+    }
     if (item.sceneMemory !== undefined) {
       const memory = parseSceneMemory(item.sceneMemory, scene.tripMs);
       if (!memory) return;
@@ -187,6 +195,10 @@ export function parseCoachingRequest(value: unknown): CoachingRequest | undefine
   }
   if (!item.recentAdvice.every(validCoachingText)) return;
   const result: CoachingRequest = { frames, recentAdvice: item.recentAdvice as string[] };
+  if (item.secondsSinceAdvice !== undefined) {
+    if (!validSeconds(item.secondsSinceAdvice)) return;
+    result.secondsSinceAdvice = item.secondsSinceAdvice;
+  }
   if (item.sceneMemory !== undefined) {
     const memory = parseSceneMemory(item.sceneMemory, frames[frames.length - 1]!.tripMs);
     if (!memory) return;

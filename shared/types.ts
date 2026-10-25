@@ -38,7 +38,18 @@ export type WebcamAlert = {
 // How a Claude-written line should sound, chosen from a fixed set that suits a learner. Nothing
 // urgent or alarming is on the list: urgency belongs only to vision warnings, which are bundled
 // clips. Templates and clips carry no delivery and keep the voice module's default.
-export type DeliveryEmotion = 'calm' | 'confident' | 'content' | 'sympathetic';
+export type DeliveryEmotion =
+  | 'calm'
+  | 'confident'
+  | 'content'
+  | 'sympathetic'
+  | 'neutral'
+  | 'curious'
+  | 'determined'
+  | 'peaceful'
+  | 'contemplative'
+  | 'grateful'
+  | 'enthusiastic';
 export type Delivery = {
   emotion: DeliveryEmotion;
   pace: 'normal' | 'slower';

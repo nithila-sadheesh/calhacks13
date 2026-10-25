@@ -15,7 +15,13 @@ import type {
   VisionAdvice,
 } from '../../../shared/types.ts';
 
-export const PROACTIVE_GAP_MS = 15000;
+// Proactive coaching backs off as it accumulates: 20 s after a lone line, 10 s more for each other
+// line in the last two minutes, up to 50 s. Scene changes, not a timer, trigger lines, so spacing
+// stays irregular instead of a fixed beat.
+export const PROACTIVE_GAP_MS = 20000;
+export const PROACTIVE_BACKOFF_MS = 10000;
+export const PROACTIVE_WINDOW_MS = 120000;
+export const MAX_PROACTIVE_GAP_MS = 50000;
 export const CONVERSATION_QUIET_MS = 8000;
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
 export const REPLAY_GAP_MS = 1000; // shorter gap before an interrupted cue's replay or a repeat
@@ -75,7 +81,7 @@ export type ArbiterState = {
   playing: boolean;
   inputActive: boolean;
   pendingQueryId?: string;
-  lastProactiveMs?: number;
+  proactiveMs: number[]; // when recent vision lines started, oldest first
   quietUntilMs: number;
   seq: number; // never reset, so speak ids stay unique across seeks
 };
@@ -110,6 +116,7 @@ export function initialState(playing = false, seq = 0): ArbiterState {
     cameraPausedSaid: false,
     playing,
     inputActive: false,
+    proactiveMs: [],
     quietUntilMs: 0,
     seq,
   };
@@ -293,6 +300,15 @@ function isDuplicate(s: Draft, key: string): boolean {
   );
 }
 
+// Required quiet after the latest proactive line, given every recent one.
+export function proactiveGapMs(history: readonly number[], nowMs: number): number {
+  const recent = history.filter((t) => nowMs - t < PROACTIVE_WINDOW_MS).length;
+  return Math.min(
+    MAX_PROACTIVE_GAP_MS,
+    PROACTIVE_GAP_MS + Math.max(0, recent - 1) * PROACTIVE_BACKOFF_MS,
+  );
+}
+
 // Admission: every incoming item is dropped, coalesced, queued or (via pump) spoken.
 function offer(run: Run, item: Item) {
   const { s, nowMs } = run;
@@ -316,8 +332,8 @@ function offer(run: Run, item: Item) {
     return reject('dropped', 'conversation has the floor');
   if (
     item.origin === 'vision' &&
-    s.lastProactiveMs !== undefined &&
-    nowMs - s.lastProactiveMs < PROACTIVE_GAP_MS
+    s.proactiveMs.length > 0 &&
+    nowMs - s.proactiveMs[s.proactiveMs.length - 1]! < proactiveGapMs(s.proactiveMs, nowMs)
   )
     return reject('dropped', 'coaching cooldown');
   if (item.alertKind) {
@@ -515,7 +531,8 @@ function speak(run: Run, item: Item) {
   s.seq += 1;
   const speakId = `${item.sourceId}#${s.seq}`;
   s.current = { item, speakId, startedMs: nowMs };
-  if (item.origin === 'vision') s.lastProactiveMs = nowMs;
+  if (item.origin === 'vision')
+    s.proactiveMs = [...s.proactiveMs.filter((t) => nowMs - t < PROACTIVE_WINDOW_MS), nowMs];
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
   if (

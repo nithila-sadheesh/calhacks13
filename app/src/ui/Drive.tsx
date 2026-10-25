@@ -3,7 +3,8 @@
 // plays the recorded drive; live feeds the rear camera into the same <video>.
 // Phase 2 (once the context is rendered): start every module. Child effects run before parent
 // effects, so every panel has subscribed to the bus before any module's start() can emit.
-// Slots: VoicePanel and UpcomingPanel sit beside the unobstructed video.
+// Slots: VisionOverlay draws local CV boxes over the video (no text panel); VoicePanel and
+// UpcomingPanel sit beside it.
 import { useEffect, useRef, useState } from 'react';
 import type { AppModule, Bus, ModuleContext, TripSource } from '../../../shared/types.ts';
 import { UpcomingPanel } from '../map/UpcomingPanel.tsx';
@@ -11,6 +12,7 @@ import { holdWakeLock, openCamera } from '../replay/camera.ts';
 import { createLive } from '../replay/live.ts';
 import { createReplay } from '../replay/replay.ts';
 import { loadFixtures } from '../replay/fixtures.ts';
+import { VisionOverlay } from '../vision/VisionOverlay.tsx';
 import { voiceModule } from '../voice/index.ts';
 import { VoicePanel } from '../voice/VoicePanel.tsx';
 import { Assistant } from './Assistant.tsx';
@@ -32,7 +34,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
   const [ready, setReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [trip, setTrip] = useState<'idle' | 'starting' | 'running'>('idle');
-  // Match the container to the source video aspect ratio.
+  // The overlay draws in the video box's coordinates, so the box takes the video's shape.
   const [aspect, setAspect] = useState(16 / 9);
   const realVoice = modules.includes(voiceModule);
   const canPlay = ready && (!realVoice || soundEnabled);
@@ -167,6 +169,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
               !live && setError('Could not load the drive video (/demo-drive/video.mp4).')
             }
           />
+          {ctx && <VisionOverlay />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
         <Captions bus={bus} />

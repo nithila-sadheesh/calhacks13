@@ -66,6 +66,7 @@ export function createVisionModule(
       let sceneMemory: SceneMemory[] = [];
       let previousScenes: CvScene[] = [];
       const recent = new Map<string, number>();
+      let lastAdviceMs: number | undefined;
       let framesProcessed = 0;
       let requestSequence = 0;
       const diagnostic = (id: number, changes: Partial<CoachingDiagnostic>) => {
@@ -92,6 +93,7 @@ export function createVisionModule(
         sceneMemory = [];
         previousScenes = [];
         recent.clear();
+        lastAdviceMs = undefined;
         lastTripMs = undefined;
         lastRequestMs = -Infinity;
         framesProcessed = 0;
@@ -198,6 +200,9 @@ export function createVisionModule(
           previousScenes: previousScenes.slice(-3),
           sceneMemory,
           recentAdvice: [...recent.keys()].slice(-3),
+          ...(lastAdviceMs !== undefined && tripMs >= lastAdviceMs
+            ? { secondsSinceAdvice: Math.round((tripMs - lastAdviceMs) / 1000) }
+            : {}),
         };
         previousScenes = [...previousScenes, scene].slice(-3);
         const started = performance.now();
@@ -283,6 +288,7 @@ export function createVisionModule(
             }
             diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });
             recent.set(result.message, now);
+            lastAdviceMs = now;
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,
               text: result.message,

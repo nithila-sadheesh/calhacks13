@@ -27,7 +27,8 @@ test('local CV generates image-free coaching through the real arbiter and speech
   await expect(page.locator('.captions p')).toHaveText('Watch for cyclists beside parked cars.', {
     timeout: 10000,
   });
-  await expect(page.locator('.overlay, .status-strip')).toHaveCount(0);
+  await expect(page.locator('.overlay-note, .status-strip')).toHaveCount(0);
+  await expect(page.locator('.overlay')).toHaveCount(1);
   expect(batches[0]?.scene.objects.length).toBeGreaterThan(0);
   expect(batches[0]?.frames).toBeUndefined();
   await page.locator('.timeline-collapse > summary').click();
@@ -40,7 +41,8 @@ test('local CV generates image-free coaching through the real arbiter and speech
   );
   await page.screenshot({ path: '/private/tmp/calhacks13-reconciled-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('.overlay, .status-strip')).toHaveCount(0);
+  await expect(page.locator('.overlay-note, .status-strip')).toHaveCount(0);
+  await expect(page.locator('.overlay')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

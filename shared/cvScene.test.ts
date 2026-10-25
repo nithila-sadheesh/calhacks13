@@ -33,3 +33,11 @@ it('validates image-free scenes and strips unspecified input fields', () => {
     parseCoachingRequest({ scene, recentAdvice: [], previousScenes: [{ ...scene, tripMs: 2000 }] }),
   ).toBeUndefined();
 });
+
+it('accepts a whole-second gap since the last suggestion and rejects malformed ones', () => {
+  expect(
+    parseCoachingRequest({ scene, recentAdvice: [], secondsSinceAdvice: 42 })?.secondsSinceAdvice,
+  ).toBe(42);
+  for (const secondsSinceAdvice of [-1, 1.5, '42', Infinity])
+    expect(parseCoachingRequest({ scene, recentAdvice: [], secondsSinceAdvice })).toBeUndefined();
+});
