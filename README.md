@@ -11,16 +11,16 @@ Everything is spoken, so eyes stay on the road. Captions show each line for the 
 ```mermaid
 flowchart LR
     CAM(["Camera"]) --> VIS["Object detection<br/>on the phone"]
-    VIS -- "what it sees,<br/>as text" --> COACH["Claude<br/>driving coach"]
+    VIS --> COACH["Claude<br/>driving coach"]
 
     GPS(["GPS"]) --> MAP["Route tracking<br/>stops, crosswalks, turns"]
 
     MIC(["Microphone<br/>tap to talk"]) --> INK["Cartesia Ink<br/>speech to text"]
-    INK -- "question" --> ASK["Claude<br/>answers questions"]
+    INK --> ASK["Claude<br/>answers questions"]
 
-    COACH -- "line + voice" --> ARB["Arbiter<br/>what to say, and when"]
-    MAP -- "reminder" --> ARB
-    ASK -- "answer" --> ARB
+    COACH --> ARB["Arbiter<br/>what to say, and when"]
+    MAP --> ARB
+    ASK --> ARB
 
     ARB --> SONIC["Cartesia Sonic<br/>streamed speech"]
     SONIC --> SPK(["Speaker"])
