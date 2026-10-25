@@ -1,3 +1,4 @@
+import { DELIVERY_SCHEMA } from '../shared/delivery.js';
 import {
   MAX_COACHING_BODY_BYTES,
   parseCoachingRequest,
@@ -10,6 +11,7 @@ export { COACHING_PROMPT } from './coachingPrompt.js';
 const SCHEMA = {
   type: 'object',
   properties: {
+    delivery: DELIVERY_SCHEMA,
     shouldSpeak: { type: 'boolean' },
     message: { type: 'string' },
     reason: { type: 'string' },
@@ -19,6 +21,7 @@ const SCHEMA = {
     sceneChanged: { type: 'boolean' },
   },
   required: [
+    'delivery',
     'shouldSpeak',
     'message',
     'reason',

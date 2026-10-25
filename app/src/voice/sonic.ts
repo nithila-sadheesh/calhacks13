@@ -1,21 +1,31 @@
 import { fetchCartesiaToken } from './token.ts';
 import { VoiceSetupError } from './setupError.ts';
-import { parseDelivery } from '../../../shared/assistant.ts';
+import { parseDelivery } from '../../../shared/delivery.ts';
 import type { Delivery } from '../../../shared/types.ts';
-import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
+import {
+  CARTESIA_VERSION,
+  SAMPLE_RATE,
+  SONIC_MODEL,
+  VOICE_ID,
+  PRONUNCIATION_DICT_ID,
+} from './config.ts';
 import { decodePcm } from './pcm.ts';
 
 // Sonic treats speed as guidance and small changes are hard to hear, so 'slower' is a clear step.
 export const SLOWER_SPEED = 0.8;
 
-// Volume is never set: loudness stays the same for every line. Anything off the shared list falls
-// back to the calm default rather than reaching Sonic.
-export function generationConfig(delivery?: Delivery): { emotion: string; speed?: number } {
+// Every generated line carries validated request-specific delivery controls.
+export function generationConfig(delivery?: Delivery): {
+  emotion: string;
+  speed: number;
+  volume: number;
+} {
   const checked = parseDelivery(delivery);
-  if (!checked) return { emotion: 'calm' };
-  return checked.pace === 'slower'
-    ? { emotion: checked.emotion, speed: SLOWER_SPEED }
-    : { emotion: checked.emotion };
+  return {
+    emotion: checked?.emotion ?? 'calm',
+    speed: checked?.speed ?? (checked?.pace === 'slower' ? SLOWER_SPEED : 1),
+    volume: checked?.volume ?? 1,
+  };
 }
 
 export type SonicMessage =
@@ -34,6 +44,7 @@ export function createSonicTransport(
   onDisconnect: () => void,
   onSent: (text: string) => void,
   onStatus?: (error?: unknown) => void,
+  pronunciationDictId = PRONUNCIATION_DICT_ID,
 ): SonicTransport {
   let socket: WebSocket | undefined;
   let connecting: Promise<WebSocket> | undefined;
@@ -140,6 +151,7 @@ export function createSonicTransport(
         JSON.stringify({
           model_id: SONIC_MODEL,
           voice: VOICE_ID,
+          ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
           transcript: text,
           language: 'en',
           generation_config: generationConfig(delivery),

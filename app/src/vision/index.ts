@@ -11,13 +11,13 @@ import {
 import type { CvScene } from '../../../shared/cvScene.ts';
 import { loadDetector, type VisionDetector } from './detector.ts';
 import { createTracker, type Track } from './tracker.ts';
-import { createSceneBuilder, sceneKey } from './cvScene.ts';
+import { createSceneBuilder } from './cvScene.ts';
+import { createSceneGate } from './sceneGate.ts';
 import { rememberScene } from './sceneMemory.ts';
 import { coachingStore, type CoachingDiagnostic } from './coachingStore.ts';
 
 export const CV_INTERVAL_MS = 125;
 export const ANALYSIS_INTERVAL_MS = 3000;
-export const SCENE_REFRESH_MS = 5000;
 export const MAX_RESPONSE_AGE_MS = 8000;
 export const ADVICE_TTL_MS = 10000;
 
@@ -53,6 +53,7 @@ export function createVisionModule(
       cleanup?.();
       const tracker = createTracker();
       const builder = createSceneBuilder();
+      const gate = createSceneGate();
       let detector: VisionDetector | undefined;
       let loadFailed = false;
       let stopped = false;
@@ -61,7 +62,6 @@ export function createVisionModule(
       let detectorMs = 0;
       let lastTripMs: number | undefined;
       let lastRequestMs = -Infinity;
-      let lastSentKey: string | undefined;
       let controller: AbortController | undefined;
       let sceneMemory: SceneMemory[] = [];
       let previousScenes: CvScene[] = [];
@@ -88,12 +88,12 @@ export function createVisionModule(
         controller = undefined;
         tracker.reset();
         builder.reset();
+        gate.reset();
         sceneMemory = [];
         previousScenes = [];
         recent.clear();
         lastTripMs = undefined;
         lastRequestMs = -Infinity;
-        lastSentKey = undefined;
         framesProcessed = 0;
         if (!stopped)
           coachingStore.set({
@@ -183,22 +183,16 @@ export function createVisionModule(
           cvFrames: framesProcessed,
           cvLatencyMs: performance.now() - began,
         });
-        const key = sceneKey(scene);
-        if (
-          !scene.objects.length ||
-          controller ||
-          tripMs - lastRequestMs < ANALYSIS_INTERVAL_MS ||
-          (key === lastSentKey && tripMs - lastRequestMs < SCENE_REFRESH_MS)
-        )
-          return;
+        const sceneReady = gate.ready(scene);
+        if (!sceneReady || controller || tripMs - lastRequestMs < ANALYSIS_INTERVAL_MS) return;
         const mine = version;
         const abort = new AbortController();
         controller = abort;
         lastRequestMs = tripMs;
-        lastSentKey = key;
+        gate.submitted(scene);
         sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
         previousScenes = previousScenes.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
-        for (const [text, time] of recent) if (tripMs - time > 20000) recent.delete(text);
+        for (const [text, time] of recent) if (tripMs - time > 90000) recent.delete(text);
         const input: CoachingRequest = {
           scene,
           previousScenes: previousScenes.slice(-3),
@@ -248,6 +242,7 @@ export function createVisionModule(
               return;
             const now = ctx.clock.nowMs();
             if (now - tripMs > MAX_RESPONSE_AGE_MS) {
+              gate.retry();
               diagnostic(requestId, { outcome: 'Discarded: response older than 8 seconds' });
               coachingStore.set({
                 ...coachingStore.get(),
@@ -280,7 +275,7 @@ export function createVisionModule(
             const normalized = adviceKey(result.message);
             if (
               [...recent].some(
-                ([text, time]) => adviceKey(text) === normalized && now - time < 20000,
+                ([text, time]) => adviceKey(text) === normalized && now - time < 90000,
               )
             ) {
               diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });
@@ -291,6 +286,7 @@ export function createVisionModule(
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,
               text: result.message,
+              ...(result.delivery ? { delivery: result.delivery } : {}),
               reason: result.reason,
               tripMs,
               expiresMs: tripMs + ADVICE_TTL_MS,
@@ -305,12 +301,14 @@ export function createVisionModule(
                   ? error.message
                   : 'Coaching request failed',
             });
-            if (!stopped && version === mine && !abort.signal.aborted)
+            if (!stopped && version === mine && !abort.signal.aborted) {
+              gate.retry();
               coachingStore.set({
                 ...coachingStore.get(),
                 status: 'error',
                 error: error instanceof Error ? error.message : 'Coaching unavailable.',
               });
+            }
           })
           .finally(() => {
             if (controller === abort) controller = undefined;

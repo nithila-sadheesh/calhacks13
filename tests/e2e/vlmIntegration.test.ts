@@ -32,7 +32,9 @@ it.each(['frames', 'cv'] as const)(
       },
     };
     const text = 'Keep the car on your left in view.';
+    const delivery = { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 } as const;
     const analyze = async () => ({
+      delivery,
       shouldSpeak: true,
       message: text,
       reason: 'Car visible in the left image region.',
@@ -87,12 +89,12 @@ it.each(['frames', 'cv'] as const)(
         expiresMs: 5000,
       });
       expect(send).not.toHaveBeenCalled();
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 30 && !send.mock.calls.length; i++) {
         ms += 100;
         await vi.advanceTimersByTimeAsync(100);
       }
-      expect(speaks[0]).toMatchObject({ text, origin: 'vision', priority: 1 });
-      expect(send).toHaveBeenCalledWith(expect.any(String), text, undefined);
+      expect(speaks[0]).toMatchObject({ text, origin: 'vision', priority: 1, delivery });
+      expect(send).toHaveBeenCalledWith(expect.any(String), text, delivery);
       const id = send.mock.calls[0]![0] as string;
       receive({ id, type: 'chunk', samples: new Float32Array([0.1]) });
       nodes[0]!.start();

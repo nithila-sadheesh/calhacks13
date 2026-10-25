@@ -3,6 +3,9 @@ export const SPEECH_SPEED = 1.15;
 export const SONIC_MODEL = 'sonic-3.6';
 export const VOICE_ID = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
 export const SAMPLE_RATE = 24000;
+// Client-visible dictionary identifier, never an API key. Only use an existing Cartesia dictionary.
+export const PRONUNCIATION_DICT_ID =
+  import.meta.env?.VITE_CARTESIA_PRONUNCIATION_DICT_ID?.trim() || undefined;
 export const CLIP_TEXT = {
   pedestrianNearby: 'Pedestrian ahead. Stay alert.',
   followingDistance: 'Leave more space ahead.',

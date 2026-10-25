@@ -170,6 +170,7 @@ export function createFrameVisionModule(
             ctx.bus.emit('visionAdvice', {
               id: `vision-advice-${++sequence}`,
               text: result.message,
+              ...(result.delivery ? { delivery: result.delivery } : {}),
               reason: result.reason,
               tripMs,
               expiresMs: tripMs + ADVICE_TTL_MS,

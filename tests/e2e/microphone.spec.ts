@@ -174,9 +174,14 @@ test('a user interruption stops guidance, gets an answer, and does not resume th
       mode: 'answer',
       question: 'What does that sign mean?',
     });
-    await route.fulfill({ json: { text: answer } });
+    await route.fulfill({
+      json: {
+        text: answer,
+        delivery: { emotion: 'sympathetic', pace: 'slower', speed: 0.85, volume: 0.9 },
+      },
+    });
   });
-  const lines: Array<{ id: string; text: string }> = [];
+  const lines: Array<{ id: string; text: string; delivery?: unknown }> = [];
   const cancelled: string[] = [];
   await page.routeWebSocket('**/tts/websocket?*', (socket) => {
     socket.onMessage((message) => {
@@ -185,6 +190,7 @@ test('a user interruption stops guidance, gets an answer, and does not resume th
         context_id?: string;
         transcript?: string;
         cancel?: boolean;
+        generation_config?: unknown;
       };
       if (!request.context_id) return;
       if (request.cancel) {
@@ -192,7 +198,11 @@ test('a user interruption stops guidance, gets an answer, and does not resume th
         return;
       }
       if (!request.transcript) return;
-      lines.push({ id: request.context_id, text: request.transcript });
+      lines.push({
+        id: request.context_id,
+        text: request.transcript,
+        delivery: request.generation_config,
+      });
       // Guidance would last ten seconds without interruption; the answer is short.
       const samples = request.transcript === answer ? 4800 : 240000;
       const audio = Buffer.alloc(samples * 2);
@@ -239,6 +249,7 @@ test('a user interruption stops guidance, gets an answer, and does not resume th
   await expect
     .poll(() => lines.map((line) => line.text))
     .toEqual(['Stop sign ahead. Prepare for a complete stop.', answer]);
+  expect(lines[1]?.delivery).toEqual({ emotion: 'sympathetic', speed: 0.85, volume: 0.9 });
   await page.waitForTimeout(3500);
   expect(lines.map((line) => line.text)).toEqual([
     'Stop sign ahead. Prepare for a complete stop.',

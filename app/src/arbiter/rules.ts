@@ -1,3 +1,4 @@
+import { parseDelivery } from '../../../shared/delivery.ts';
 // The arbiter's rules as one pure function: step(state, input, nowMs) returns the next state and
 // the events to emit. No bus, no clock, no timers, so every rule in docs/DESIGN.md is unit-tested
 // in rules.test.ts. The arbiter decides only when something is heard, never what is safe.
@@ -224,6 +225,7 @@ export function step(
         sourceId: advice.id,
         dedupeKey: `advice:${advice.id}`,
         text: advice.text,
+        ...(advice.delivery ? { delivery: advice.delivery } : {}),
         priority: 1,
         earliestMs: advice.tripMs,
         expiresMs: advice.expiresMs,
@@ -468,7 +470,13 @@ function finishCurrent(run: Run) {
 function watchdog(run: Run) {
   const current = run.s.current;
   if (!current) return;
-  const pace = current.item.delivery?.pace === 'slower' ? SLOWER_PACE_FACTOR : 1;
+  const delivery = parseDelivery(current.item.delivery);
+  const pace =
+    delivery?.speed !== undefined
+      ? 1 / delivery.speed
+      : delivery?.pace === 'slower'
+        ? SLOWER_PACE_FACTOR
+        : 1;
   const limitMs = (current.item.text.length / CHARS_PER_SECOND) * 1000 * pace + WATCHDOG_SLACK_MS;
   if (run.nowMs - current.startedMs <= limitMs) return;
   run.effects.push({

@@ -1,8 +1,10 @@
+import { parseDelivery } from './delivery.js';
+export { parseDelivery, DELIVERY_EMOTIONS, DELIVERY_PACES } from './delivery.js';
 import { parseCvScene, type CvScene } from './cvScene.js';
 // Wire format between the browser's assistant module and POST /api/assistant. The browser sends a
 // short trip summary: what was said, recent alerts, upcoming features by street and distance, and
 // speed. Never video, images or GPS coordinates (AGENTS.md section 3 rule 9).
-import type { Delivery, DeliveryEmotion, MapFeatureKind } from './types.ts';
+import type { Delivery, MapFeatureKind } from './types.ts';
 
 export type TripContext = {
   localScene?: CvScene; // tentative image observations; never measured road geometry
@@ -21,13 +23,6 @@ export type AssistantAction = 'repeat' | 'mute' | 'unmute';
 export type AssistantResponse = { text?: string; action?: AssistantAction; delivery?: Delivery };
 
 export const MAX_QUESTION_CHARS = 500;
-export const DELIVERY_EMOTIONS: readonly DeliveryEmotion[] = [
-  'calm',
-  'confident',
-  'content',
-  'sympathetic',
-];
-export const DELIVERY_PACES: readonly Delivery['pace'][] = ['normal', 'slower'];
 const KINDS: readonly MapFeatureKind[] = [
   'turnLeft',
   'turnRight',
@@ -97,14 +92,6 @@ export function parseAssistantRequest(v: unknown): AssistantRequest | undefined 
     return { mode: 'cue', feature: street ? { kind: k, street } : { kind: k }, context };
   }
   return undefined;
-}
-
-// Anything off the list is dropped rather than guessed, so the voice keeps its default.
-export function parseDelivery(v: unknown): Delivery | undefined {
-  if (!isRecord(v)) return undefined;
-  const emotion = DELIVERY_EMOTIONS.find((e) => e === v.emotion);
-  if (!emotion) return undefined;
-  return { emotion, pace: DELIVERY_PACES.find((p) => p === v.pace) ?? 'normal' };
 }
 
 export function parseAssistantResponse(v: unknown): AssistantResponse | undefined {

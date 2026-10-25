@@ -1,3 +1,5 @@
+import { parseDelivery } from './delivery.js';
+import type { Delivery } from './types.ts';
 import { parseCvScene, type CvScene } from './cvScene.js';
 // VLM wire format and validation shared by the browser and server.
 export type VideoFrame = { tripMs: number; jpeg: string };
@@ -10,6 +12,7 @@ export type CoachingRequest = {
   sceneMemory?: SceneMemory[];
 };
 export type CoachingResponse = {
+  delivery?: Delivery;
   shouldSpeak: boolean;
   message: string;
   reason: string;
@@ -67,6 +70,12 @@ export function validCoachingText(value: unknown): value is string {
     /[<>]/.test(value)
   )
     return false;
+  if (
+    /\b(?:which|what)\s+(?:approach|way|direction)[^.!?]{0,80}\b(?:controls?|governs?)\b|\b(?:check|determine|identify)[^.!?]{0,60}\bstop sign[^.!?]{0,50}\bcontrols?\b/i.test(
+      value,
+    )
+  )
+    return false;
   // Defense in depth only; this is not a proof of driving safety.
   return !/\b(brake|accelerate|speed up|go now|right.of.way|safe to|clear to|lane is clear|intersection is clear|green light|red light|yellow light|speed limit|collision in|guarantee)\b/i.test(
     value,
@@ -91,6 +100,11 @@ export function parseCoachingResponse(value: unknown): CoachingResponse | undefi
     message: item.message.trim(),
     reason: item.reason.trim(),
   };
+  if (item.delivery !== undefined) {
+    const delivery = parseDelivery(item.delivery);
+    if (!delivery) return;
+    if (item.shouldSpeak) result.delivery = delivery;
+  }
   if (
     ['observations', 'uncertainties', 'coachingPoint', 'sceneChanged'].some((key) => key in item)
   ) {

@@ -54,19 +54,24 @@ afterEach(() => {
 });
 describe('Sonic generation config', () => {
   it('keeps the calm default for templates and anything off the shared list', () => {
-    expect(generationConfig()).toEqual({ emotion: 'calm' });
+    expect(generationConfig()).toEqual({ emotion: 'calm', speed: 1, volume: 1 });
     expect(generationConfig({ emotion: 'panicked', pace: 'normal' } as never)).toEqual({
       emotion: 'calm',
+      speed: 1,
+      volume: 1,
     });
   });
 
-  it("maps Claude's delivery to emotion and speed, and never sets volume", () => {
+  it("maps Claude's bounded delivery to emotion, speed and volume", () => {
     expect(generationConfig({ emotion: 'confident', pace: 'normal' })).toEqual({
       emotion: 'confident',
+      speed: 1,
+      volume: 1,
     });
     expect(generationConfig({ emotion: 'sympathetic', pace: 'slower' })).toEqual({
       emotion: 'sympathetic',
       speed: SLOWER_SPEED,
+      volume: 1,
     });
   });
 
@@ -210,4 +215,27 @@ it('exposes warm-up token failure and clears it once a retry connects', async ()
   await pending;
   expect(s.status).toHaveBeenLastCalledWith();
   s.transport.close();
+});
+
+it('sends bounded per-sentence delivery and a configured real dictionary ID', async () => {
+  setup();
+  const transport = createSonicTransport(
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+    undefined,
+    'existing-dictionary-id',
+  );
+  const delivery = { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 } as const;
+  const pending = transport.send('one', 'Check both sides.', delivery);
+  await flush();
+  Socket.instances[0]!.open();
+  await pending;
+  expect(Socket.instances[0]!.sent[0]).toMatchObject({
+    model_id: 'sonic-3.6',
+    pronunciation_dict_id: 'existing-dictionary-id',
+    generation_config: { emotion: 'confident', speed: 1.1, volume: 1.05 },
+    output_format: { sample_rate: 24000, encoding: 'pcm_s16le' },
+  });
+  transport.close();
 });

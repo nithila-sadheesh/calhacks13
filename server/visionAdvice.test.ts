@@ -14,6 +14,7 @@ const request = (body: unknown = input, headers: Record<string, string> = {}) =>
     body: JSON.stringify(body),
   });
 const advice = {
+  delivery: { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 },
   shouldSpeak: true,
   message: 'Watch for cyclists beside parked vehicles.',
   reason: 'A cyclist is visible.',
@@ -123,14 +124,12 @@ it('does not apply Sonnet-specific thinking options to an overridden model', asy
 });
 
 it('sends CV observations as text without image blocks or invented scene fields', async () => {
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockResolvedValue(
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(advice) }],
-      }),
-    );
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
   const handler = createVisionAdviceHandler({ getKey: () => 'test-only-key', fetcher });
   const scene = {
     tripMs: 1000,

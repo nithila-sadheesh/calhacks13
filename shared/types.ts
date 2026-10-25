@@ -39,9 +39,15 @@ export type WebcamAlert = {
 // urgent or alarming is on the list: urgency belongs only to vision warnings, which are bundled
 // clips. Templates and clips carry no delivery and keep the voice module's default.
 export type DeliveryEmotion = 'calm' | 'confident' | 'content' | 'sympathetic';
-export type Delivery = { emotion: DeliveryEmotion; pace: 'normal' | 'slower' };
+export type Delivery = {
+  emotion: DeliveryEmotion;
+  pace: 'normal' | 'slower';
+  speed?: number;
+  volume?: number;
+};
 
 export type VisionAdvice = {
+  delivery?: Delivery;
   id: string;
   text: string;
   reason: string;

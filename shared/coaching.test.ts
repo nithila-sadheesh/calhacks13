@@ -70,3 +70,22 @@ it('preserves bounded structured observations and rejects incomplete evidence fi
     parseCoachingResponse({ shouldSpeak: false, message: '', reason: '', observations: [] }),
   ).toBeUndefined();
 });
+
+it('blocks the confusing stop-sign applicability phrase and validates delivery with coaching', () => {
+  for (const text of [
+    'Stop sign on the right; check which approach it controls.',
+    'Check which way the stop sign controls.',
+  ])
+    expect(validCoachingText(text)).toBe(false);
+  const delivery = { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 };
+  const response = {
+    shouldSpeak: true,
+    message: 'Keep the cyclist in view while checking surrounding space.',
+    reason: 'Cyclist visible.',
+    delivery,
+  };
+  expect(parseCoachingResponse(response)?.delivery).toEqual(delivery);
+  expect(
+    parseCoachingResponse({ ...response, delivery: { ...delivery, volume: 2 } }),
+  ).toBeUndefined();
+});

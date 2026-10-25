@@ -145,7 +145,7 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   try {
     await s.module.start(s.ctx);
     await s.advance(15000);
-    expect(s.analyze.mock.calls.length).toBeGreaterThan(1);
+    expect(s.analyze).toHaveBeenCalledTimes(1);
     expect(s.advice).toEqual([]);
     expect(coachingStore.get().message).toBeUndefined();
     expect(coachingStore.get().diagnostics?.[0]).toMatchObject({
@@ -193,6 +193,7 @@ it('publishes advice when Claude changes from silence to a useful teaching point
     await s.module.start(s.ctx);
     await s.advance(3000);
     expect(s.advice).toEqual([]);
+    s.move();
     await s.advance(3000);
     expect(s.advice).toHaveLength(1);
     expect(s.advice[0]?.text).toBe('Keep the car on your left in view.');
@@ -217,6 +218,49 @@ it('waits for a live trip to start and stops observations when it ends', async (
     const count = s.detect.mock.calls.length;
     await s.advance(1000);
     expect(s.detect).toHaveBeenCalledTimes(count);
+  } finally {
+    s.module.stop();
+  }
+});
+
+it('passes Claude-selected delivery to the arbiter event', async () => {
+  const s = setup();
+  const delivery = { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 } as const;
+  s.analyze.mockResolvedValue({
+    shouldSpeak: true,
+    message: 'Keep the car on your left in view.',
+    reason: 'Car on left.',
+    delivery,
+  });
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(3000);
+    expect(s.advice[0]?.delivery).toEqual(delivery);
+  } finally {
+    s.module.stop();
+  }
+});
+
+it('can recover from a stale response without bringing back periodic refreshes', async () => {
+  const s = setup();
+  let resolve!: (response: CoachingResponse) => void;
+  s.analyze.mockImplementationOnce(
+    () =>
+      new Promise<CoachingResponse>((r) => {
+        resolve = r;
+      }),
+  );
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(9500);
+    expect(s.analyze).toHaveBeenCalledTimes(1);
+    resolve({ shouldSpeak: false, message: '', reason: 'Old result.' });
+    await vi.advanceTimersByTimeAsync(0);
+    await s.advance(500);
+    expect(s.analyze).toHaveBeenCalledTimes(2);
+    expect(s.advice).toHaveLength(1);
+    await s.advance(10000);
+    expect(s.analyze).toHaveBeenCalledTimes(2);
   } finally {
     s.module.stop();
   }

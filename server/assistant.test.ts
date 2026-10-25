@@ -22,7 +22,17 @@ const context: TripContext = {
 const usage = { input_tokens: 120, output_tokens: 20, cache_read_input_tokens: 4000 };
 
 function setup(
-  reply: { say: string; action?: string; emotion?: string; pace?: string } | 'refusal' | Error,
+  reply:
+    | {
+        say: string;
+        action?: string;
+        emotion?: string;
+        pace?: string;
+        speed?: number;
+        volume?: number;
+      }
+    | 'refusal'
+    | Error,
 ) {
   const create = vi.fn(async (body: unknown) => {
     void body;
@@ -101,8 +111,8 @@ describe('assistant endpoint', () => {
           output_config: { format: { schema: { required: string[] } } };
         }
       ).output_config.format.schema.required;
-    expect(schema(0)).toEqual(['say', 'action', 'emotion', 'pace']);
-    expect(schema(1)).toEqual(['say', 'emotion']);
+    expect(schema(0)).toEqual(['say', 'action', 'emotion', 'pace', 'speed', 'volume']);
+    expect(schema(1)).toEqual(['say', 'emotion', 'speed', 'volume']);
   });
 
   it('returns a repeat action without speaking extra text', async () => {
@@ -218,5 +228,19 @@ describe('assistant endpoint', () => {
   it('frames the question as transcribed speech after the context', () => {
     const prompt = userPrompt({ mode: 'answer', question: 'repeat that', context });
     expect(prompt.indexOf('Trip context')).toBeLessThan(prompt.indexOf('Spoken request'));
+  });
+});
+
+it('preserves Claude-selected speed and volume with the answer', async () => {
+  const s = setup({
+    say: 'Check both sides.',
+    emotion: 'confident',
+    pace: 'normal',
+    speed: 1.1,
+    volume: 1.05,
+  });
+  const response = await s.post(ask('What should I check?'));
+  expect(await response.json()).toMatchObject({
+    delivery: { emotion: 'confident', pace: 'normal', speed: 1.1, volume: 1.05 },
   });
 });
