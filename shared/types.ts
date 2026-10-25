@@ -34,6 +34,12 @@ export type WebcamAlert = {
   clipKey: string; // key in fixtures/audio/manifest.json
 };
 
+// How a Claude-written line should sound, chosen from a fixed set that suits a learner. Nothing
+// urgent or alarming is on the list: urgency belongs only to vision warnings, which are bundled
+// clips. Templates and clips carry no delivery and keep the voice module's default.
+export type DeliveryEmotion = 'calm' | 'confident' | 'content' | 'sympathetic';
+export type Delivery = { emotion: DeliveryEmotion; pace: 'normal' | 'slower' };
+
 export type SpeakRequest = {
   id: string;
   sourceId: string; // the MapCue/WebcamAlert id, for the timeline
@@ -42,6 +48,7 @@ export type SpeakRequest = {
   fallbackClipKey?: string; // bundled clip to play if streaming fails or is slow
   priority: 0 | 1 | 2; // 0 = vision warning, interrupts
   expiresMs?: number;
+  delivery?: Delivery; // streamed lines only; ignored for bundled clips
 };
 
 export type ArbiterDecision = {
@@ -78,12 +85,13 @@ export type AssistantReply = {
   queryId: string;
   text?: string;
   action?: 'repeat' | 'mute' | 'unmute';
+  delivery?: Delivery; // only with Claude's own text, never with a fallback line
   tripMs: number;
 };
 
 // Claude-written wording for a route reminder. Replaces the template text when that feature's
 // cue fires; the template is used whenever no wording arrived in time.
-export type CueWording = { featureId: string; text: string };
+export type CueWording = { featureId: string; text: string; delivery?: Delivery };
 
 // The comment after each event names its only publisher. Anyone may subscribe.
 export type Events = {

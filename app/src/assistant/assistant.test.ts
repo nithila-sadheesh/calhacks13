@@ -76,6 +76,27 @@ describe('assistant module', () => {
     s.module.stop();
   });
 
+  it('passes the delivery with safe text, never with the apology that replaces unsafe text', async () => {
+    const delivery = { emotion: 'sympathetic', pace: 'slower' };
+    const s = setup(() => ok({ text: "That's completely normal.", delivery }));
+    await s.module.start(s.ctx);
+    s.ask("I'm nervous");
+    await settle();
+    expect(s.of('assistantReply')[0]).toMatchObject({
+      text: "That's completely normal.",
+      delivery,
+    });
+    s.module.stop();
+
+    const unsafe = setup(() => ok({ text: 'The intersection is clear.', delivery }));
+    await unsafe.module.start(unsafe.ctx);
+    unsafe.ask('can I go');
+    await settle();
+    expect(unsafe.of('assistantReply')[0]?.text).toBe(UNAVAILABLE);
+    expect(unsafe.of('assistantReply')[0]?.delivery).toBeUndefined();
+    unsafe.module.stop();
+  });
+
   it('passes an action through without inventing text', async () => {
     const s = setup(() => ok({ action: 'repeat' }));
     await s.module.start(s.ctx);
@@ -86,13 +107,12 @@ describe('assistant module', () => {
     s.module.stop();
   });
 
-  it('posts a reply with nothing to say when the server stays silent', async () => {
+  it('says it cannot answer when the server reply is empty', async () => {
     const s = setup(() => ok({}));
     await s.module.start(s.ctx);
     s.ask('uh the thing');
     await settle();
-    expect(s.of('assistantReply')[0]).toMatchObject({ queryId: 'query-1' });
-    expect(s.of('assistantReply')[0]?.text).toBeUndefined();
+    expect(s.of('assistantReply')[0]).toMatchObject({ queryId: 'query-1', text: UNAVAILABLE });
     expect(s.of('assistantReply')[0]?.action).toBeUndefined();
     s.module.stop();
   });
@@ -116,7 +136,10 @@ describe('assistant module', () => {
   it('words each upcoming feature once and skips failures so the template is used', async () => {
     const s = setup((body) =>
       (body.feature as { kind: string }).kind === 'stopSign'
-        ? ok({ text: 'Stop sign on Oxford Street. Plan a complete stop.' })
+        ? ok({
+            text: 'Stop sign on Oxford Street. Plan a complete stop.',
+            delivery: { emotion: 'confident', pace: 'normal' },
+          })
         : Promise.resolve(new Response(null, { status: 422 })),
     );
     await s.module.start(s.ctx);
@@ -135,7 +158,11 @@ describe('assistant module', () => {
     await settle();
     expect(s.bodies.map((b) => b.mode)).toEqual(['cue', 'cue']);
     expect(s.of('cueWording')).toEqual([
-      { featureId: 'stop-1', text: 'Stop sign on Oxford Street. Plan a complete stop.' },
+      {
+        featureId: 'stop-1',
+        text: 'Stop sign on Oxford Street. Plan a complete stop.',
+        delivery: { emotion: 'confident', pace: 'normal' },
+      },
     ]);
     s.module.stop();
   });

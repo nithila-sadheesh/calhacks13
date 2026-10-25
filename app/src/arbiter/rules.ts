@@ -5,6 +5,7 @@ import type {
   ArbiterDecision,
   AssistantReply,
   CueWording,
+  Delivery,
   MapCue,
   MapFeatureKind,
   SpeakRequest,
@@ -19,6 +20,7 @@ export const ANSWER_TTL_MS = 15000; // a spoken answer older than this is no lon
 export const SYSTEM_TTL_MS = 10000;
 export const WATCHDOG_SLACK_MS = 4000; // on top of the estimated speech length
 const CHARS_PER_SECOND = 14;
+const SLOWER_PACE_FACTOR = 1.25; // a 'slower' line takes longer; Sonic treats speed as guidance
 
 export const NOTHING_TO_REPEAT = 'Nothing to repeat yet.';
 
@@ -43,6 +45,7 @@ export type Item = {
   text: string;
   clipKey?: string;
   fallbackClipKey?: string;
+  delivery?: Delivery;
   priority: 0 | 1 | 2;
   earliestMs: number;
   expiresMs: number;
@@ -59,7 +62,7 @@ export type ArbiterState = {
   // The last line that "repeat" can replay: a route reminder, an answer or a system line. Never a
   // vision warning: replayed late, "pedestrian ahead" would describe a moment that has passed.
   lastLine?: Item;
-  cueWording: ReadonlyMap<string, string>; // featureId -> Claude wording, used if it arrived in time
+  cueWording: ReadonlyMap<string, CueWording>; // by featureId; used if it arrived in time
   lastEndMs?: number;
   muted: boolean;
   cameraPausedSaid: boolean;
@@ -98,13 +101,13 @@ export function initialState(playing = false, seq = 0): ArbiterState {
 }
 
 // `wording` is Claude's text for this feature, if it arrived before the cue; otherwise the
-// map's approved template is spoken. The fallback clip is the same either way.
-export function cueItem(cue: MapCue, wording?: string): Item {
-  return {
+// map's approved template is spoken in the default voice. The fallback clip is the same either way.
+export function cueItem(cue: MapCue, wording?: CueWording): Item {
+  const item: Item = {
     origin: 'cue',
     sourceId: cue.id,
     dedupeKey: `feature:${cue.featureId}`,
-    text: wording ?? cue.text,
+    text: wording?.text ?? cue.text,
     fallbackClipKey: FALLBACK_CLIPS[cue.featureKind],
     priority: cue.priority,
     earliestMs: cue.earliestMs,
@@ -113,6 +116,8 @@ export function cueItem(cue: MapCue, wording?: string): Item {
     why: wording ? 'cue window open (Claude wording)' : 'cue window open',
     replayed: false,
   };
+  if (wording?.delivery) item.delivery = wording.delivery;
+  return item;
 }
 
 export function alertItem(alert: WebcamAlert): Item {
@@ -159,7 +164,7 @@ export function step(
       break;
     case 'cueWording': {
       const wording = new Map(s.cueWording);
-      wording.set(input.wording.featureId, input.wording.text);
+      wording.set(input.wording.featureId, input.wording);
       s.cueWording = wording;
       break;
     }
@@ -334,7 +339,7 @@ function onVoice(run: Run, kind: 'repeat' | 'mute' | 'unmute') {
 function onAnswer(run: Run, reply: AssistantReply) {
   if (reply.action) onVoice(run, reply.action);
   if (!reply.text || reply.action === 'repeat') return;
-  offer(run, {
+  const item: Item = {
     origin: 'answer',
     sourceId: reply.id,
     text: reply.text,
@@ -344,7 +349,9 @@ function onAnswer(run: Run, reply: AssistantReply) {
     gapMs: REPLAY_GAP_MS,
     why: 'answer to spoken request',
     replayed: false,
-  });
+  };
+  if (reply.delivery) item.delivery = reply.delivery;
+  offer(run, item);
 }
 
 function readyAt(s: Draft, item: Item): number {
@@ -361,7 +368,8 @@ function finishCurrent(run: Run) {
 function watchdog(run: Run) {
   const current = run.s.current;
   if (!current) return;
-  const limitMs = (current.item.text.length / CHARS_PER_SECOND) * 1000 + WATCHDOG_SLACK_MS;
+  const pace = current.item.delivery?.pace === 'slower' ? SLOWER_PACE_FACTOR : 1;
+  const limitMs = (current.item.text.length / CHARS_PER_SECOND) * 1000 * pace + WATCHDOG_SLACK_MS;
   if (run.nowMs - current.startedMs <= limitMs) return;
   run.effects.push({
     type: 'log',
@@ -406,6 +414,7 @@ function speak(run: Run, item: Item) {
   };
   if (item.clipKey) request.clipKey = item.clipKey;
   if (item.fallbackClipKey) request.fallbackClipKey = item.fallbackClipKey;
+  if (item.delivery) request.delivery = item.delivery;
   run.effects.push({ type: 'speak', request });
   decide(run, item.sourceId, 'spoken', item.why, speakId);
 }

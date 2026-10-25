@@ -393,6 +393,24 @@ describe('rule: repeat', () => {
     expect(h.decisions.at(-1)).toEqual(['answer-1', 'spoken', 'repeat requested']);
   });
 
+  it("repeats an answer the way it was first said, with Claude's delivery", () => {
+    const h = new Harness();
+    const delivery = { emotion: 'sympathetic', pace: 'slower' } as const;
+    h.send(
+      {
+        type: 'answer',
+        reply: { id: 'answer-1', queryId: 'q-1', text: 'That is okay.', delivery, tripMs: 0 },
+      },
+      0,
+    );
+    h.end(2000);
+    h.send({ type: 'voice', kind: 'repeat' }, 3500);
+    expect(h.speaks.map((s) => [s.sourceId, s.delivery])).toEqual([
+      ['answer-1', delivery],
+      ['answer-1', delivery],
+    ]);
+  });
+
   it('a repeated camera-paused line plays its clip again', () => {
     const h = new Harness();
     h.send({ type: 'camera', ok: false }, 0);
@@ -489,7 +507,11 @@ describe('assistant', () => {
     h.send(
       {
         type: 'cueWording',
-        wording: { featureId: 'stop-1', text: 'Stop sign on Oxford. Plan a full stop.' },
+        wording: {
+          featureId: 'stop-1',
+          text: 'Stop sign on Oxford. Plan a full stop.',
+          delivery: { emotion: 'confident', pace: 'normal' },
+        },
       },
       0,
     );
@@ -497,6 +519,7 @@ describe('assistant', () => {
     expect(h.speaks[0]).toMatchObject({
       text: 'Stop sign on Oxford. Plan a full stop.',
       fallbackClipKey: 'stopSign',
+      delivery: { emotion: 'confident', pace: 'normal' },
     });
     expect(h.decisions[0]).toEqual(['cue-1', 'spoken', 'cue window open (Claude wording)']);
     h.end(3000);
@@ -515,6 +538,23 @@ describe('assistant', () => {
     expect(h.speaks[1]?.text).toBe(
       'Left turn ahead onto Main. Check for pedestrians before turning.',
     );
+    // A template is an approved phrase in the default voice; it never borrows a delivery.
+    expect(h.speaks[1]?.delivery).toBeUndefined();
+  });
+
+  it("speaks an answer with Claude's delivery, and gives a slower line more time", () => {
+    const delivery = { emotion: 'sympathetic', pace: 'slower' } as const;
+    const slow = new Harness();
+    slow.send({ type: 'answer', reply: reply({ delivery }) }, 1000);
+    expect(slow.speaks[0]?.delivery).toEqual(delivery);
+    slow.send({ type: 'tick' }, 8000);
+    expect(slow.currentId).toBeDefined();
+
+    const normal = new Harness();
+    normal.send({ type: 'answer', reply: reply() }, 1000);
+    expect(normal.speaks[0]?.delivery).toBeUndefined();
+    normal.send({ type: 'tick' }, 8000);
+    expect(normal.currentId).toBeUndefined();
   });
 
   it('a reset forgets wording from the previous pass', () => {
@@ -551,6 +591,20 @@ describe('assistant', () => {
     h.end(3000);
     h.send({ type: 'answer', reply: reply({ action: 'repeat', text: 'Repeating.' }) }, 5000);
     expect(h.speaks.map((s) => s.text)).toEqual([cue().text, cue().text]);
+  });
+
+  it('a repeat replays the last answer when it came after the last cue', () => {
+    const h = new Harness();
+    h.send({ type: 'cue', cue: cue() }, 0);
+    h.end(3000);
+    h.send({ type: 'answer', reply: reply() }, 4000);
+    h.end(6000);
+    h.send({ type: 'voice', kind: 'repeat' }, 6000 + REPLAY_GAP_MS);
+    expect(h.speaks.map((s) => s.text)).toEqual([
+      cue().text,
+      'The stop sign is about 60 meters ahead.',
+      'The stop sign is about 60 meters ahead.',
+    ]);
   });
 
   it('a mute action mutes and speaks its confirmation; later reminders are dropped', () => {
