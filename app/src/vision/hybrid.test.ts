@@ -157,14 +157,21 @@ it('allows Claude to choose silence without fabricating a spoken alert', async (
   }
 });
 
-it('offers periodic local reminders while Claude chooses silence and respects active speech', async () => {
+it('fills only real silences with local reminders, without repeating or keeping a beat', async () => {
   const s = setup(true);
   s.analyze.mockResolvedValue({ shouldSpeak: false, message: '', reason: 'No stronger cue.' });
   try {
     await s.module.start(s.ctx);
-    await s.advance(3500);
+    await s.advance(11500);
+    expect(s.advice).toHaveLength(0);
+    await s.advance(1000);
     expect(s.advice).toHaveLength(1);
     expect(s.advice[0]?.text).toContain('car on your left');
+    expect(s.advice[0]?.delivery?.emotion).toBe('confident');
+    // The same reminder is not said again while the scene stays the same.
+    await s.advance(30000);
+    expect(s.advice).toHaveLength(1);
+    s.move();
     s.bus.emit('speak', {
       id: 'busy',
       text: 'Keep observing.',
@@ -172,11 +179,56 @@ it('offers periodic local reminders while Claude chooses silence and respects ac
       sourceId: 'test',
       origin: 'vision',
     });
-    await s.advance(4000);
+    await s.advance(25000);
     expect(s.advice).toHaveLength(1);
+    // The next gap is longer than the first and counts from the end of the last line.
     s.bus.emit('speechEnded', { id: 'busy', interrupted: false });
-    await s.advance(200);
+    await s.advance(15000);
+    expect(s.advice).toHaveLength(1);
+    await s.advance(1500);
     expect(s.advice).toHaveLength(2);
+    expect(s.advice[1]?.text).toContain('car on your right');
+  } finally {
+    s.module.stop();
+  }
+});
+
+it("forwards Claude's delivery, reports quiet time and holds lines that follow speech too closely", async () => {
+  const s = setup();
+  const delivery = { emotion: 'determined', pace: 'normal', speed: 1.1, volume: 1.15 } as const;
+  s.analyze.mockResolvedValueOnce({
+    shouldSpeak: true,
+    message: 'Keep the car on your left in view.',
+    reason: 'A car is detected in the left image region.',
+    delivery,
+  });
+  try {
+    await s.module.start(s.ctx);
+    await s.advance(1500);
+    expect(s.advice).toHaveLength(1);
+    expect(s.advice[0]?.delivery).toEqual(delivery);
+    const firstRequest = s.analyze.mock.calls[0]![0] as { quietForMs?: number };
+    expect(firstRequest.quietForMs).toBeGreaterThanOrEqual(0);
+    s.bus.emit('speak', {
+      id: 'line',
+      text: 'Keep the car on your left in view.',
+      priority: 1,
+      sourceId: 'test',
+      origin: 'vision',
+    });
+    s.bus.emit('speechEnded', { id: 'line', interrupted: false });
+    s.analyze.mockResolvedValueOnce({
+      shouldSpeak: true,
+      message: 'Track the car now on your right.',
+      reason: 'The car moved to the right image region.',
+    });
+    s.move();
+    await s.advance(3500);
+    expect(s.analyze).toHaveBeenCalledTimes(2);
+    expect(s.advice).toHaveLength(1);
+    expect(coachingStore.get().diagnostics?.at(-1)?.outcome).toBe(
+      'Suppressed: too soon after the previous line',
+    );
   } finally {
     s.module.stop();
   }

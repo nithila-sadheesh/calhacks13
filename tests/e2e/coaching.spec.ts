@@ -3,7 +3,11 @@ import { expect, test } from '@playwright/test';
 test('local CV generates image-free coaching through the real arbiter and speech events', async ({
   page,
 }) => {
-  const batches: Array<{ scene: { tripMs: number; objects: unknown[] }; frames?: unknown }> = [];
+  const batches: Array<{
+    scene: { tripMs: number; objects: unknown[] };
+    frames?: unknown;
+    quietForMs?: unknown;
+  }> = [];
   await page.route('**/api/vision-advice', async (route) => {
     batches.push(route.request().postDataJSON());
     await route.fulfill({
@@ -27,36 +31,20 @@ test('local CV generates image-free coaching through the real arbiter and speech
   await expect(page.locator('.captions p')).toHaveText('Watch for cyclists beside parked cars.', {
     timeout: 10000,
   });
-  await page.getByText('What the coach observed', { exact: true }).click();
-  await expect(
-    page.locator('.coaching-evidence').filter({ hasText: 'What the coach observed' }),
-  ).toContainText('Its intended movement is unknown.');
+  // Boxes only over the video: no gray status or evidence panel.
+  await expect(page.locator('.cv-box').first()).toBeVisible();
+  await expect(page.locator('.overlay-note')).toHaveCount(0);
+  await expect(page.locator('.overlay')).not.toContainText('Watch for cyclists');
   expect(batches[0]?.scene.objects.length).toBeGreaterThan(0);
   expect(batches[0]?.frames).toBeUndefined();
+  expect(typeof batches[0]?.quietForMs).toBe('number');
   await page.locator('.timeline-collapse > summary').click();
   await expect(page.getByRole('region', { name: 'Timeline' })).toContainText('Video coaching');
   await expect(page.getByRole('region', { name: 'Data use' })).toContainText('Local CV scene');
 
   await expect(page.locator('video')).toHaveJSProperty('ended', true, { timeout: 15000 });
-  await expect(page.getByRole('region', { name: 'Timeline' })).toContainText(
-    'Periodic local observation reminder',
-  );
   await page.screenshot({ path: '/private/tmp/calhacks13-reconciled-desktop.png', fullPage: true });
-  await page.getByText(/Coaching request diagnostics/).click();
-  const diagnostics = page
-    .locator('.coaching-evidence')
-    .filter({ hasText: 'Coaching request diagnostics' });
-  await expect(diagnostics).toContainText('Sent to arbiter (not confirmation of audio)');
-  await expect(diagnostics).toContainText('A cyclist is visible near parked vehicles.');
-  await expect(diagnostics).toContainText('confidence');
-  await expect(
-    page.locator('.overlay-note > p').filter({ hasText: 'Watch for cyclists beside parked cars.' }),
-  ).toHaveCount(0);
-  await page.getByText(/Coaching request diagnostics/).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  const strip = await page.locator('.status-strip').boundingBox();
-  const note = await page.locator('.overlay-note').boundingBox();
-  expect(note!.y).toBeGreaterThanOrEqual(strip!.y + strip!.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

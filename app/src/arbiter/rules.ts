@@ -208,6 +208,7 @@ export function step(
         gapMs: 1000,
         why: advice.reason,
         replayed: false,
+        ...(advice.delivery ? { delivery: advice.delivery } : {}),
       });
       break;
     }
@@ -413,7 +414,12 @@ function finishCurrent(run: Run) {
 function watchdog(run: Run) {
   const current = run.s.current;
   if (!current) return;
-  const pace = current.item.delivery?.pace === 'slower' ? SLOWER_PACE_FACTOR : 1;
+  const delivery = current.item.delivery;
+  const pace = delivery?.speed
+    ? 1 / delivery.speed
+    : delivery?.pace === 'slower'
+      ? SLOWER_PACE_FACTOR
+      : 1;
   const limitMs = (current.item.text.length / CHARS_PER_SECOND) * 1000 * pace + WATCHDOG_SLACK_MS;
   if (run.nowMs - current.startedMs <= limitMs) return;
   run.effects.push({

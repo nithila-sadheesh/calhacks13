@@ -735,3 +735,22 @@ it('does not let a periodic fallback replace queued Claude coaching', () => {
   );
   expect(result.state.queue.map((item) => item.sourceId)).toEqual(['claude-1']);
 });
+
+it("speaks generated coaching with Claude's delivery and gives slow speech more watchdog time", () => {
+  const delivery = { emotion: 'contemplative', pace: 'normal', speed: 0.8, volume: 0.9 } as const;
+  const advice = {
+    id: 'vlm-slow',
+    text: 'That van hides the pavement; scan its far edge.',
+    reason: 'Van on the right.',
+    tripMs: 1000,
+    expiresMs: 11000,
+    delivery,
+  };
+  let result = step(initialState(true), { type: 'advice', advice }, 1000);
+  const spoken = result.effects.find((effect) => effect.type === 'speak');
+  expect(spoken).toMatchObject({ request: { origin: 'vision', delivery } });
+  // At 0.8x the line runs about 25% longer, so the watchdog must not cut it at normal length.
+  const normalLimit = (advice.text.length / 14) * 1000 + 4000;
+  result = step(result.state, { type: 'tick' }, 1000 + normalLimit + 200);
+  expect(result.effects.some((effect) => effect.type === 'log')).toBe(false);
+});

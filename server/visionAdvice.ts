@@ -4,6 +4,7 @@ import {
   parseCoachingResponse,
 } from '../shared/coaching.js';
 
+import { DELIVERY_SCHEMA } from '../shared/delivery.js';
 import { COACHING_PROMPT } from './coachingPrompt.js';
 export { COACHING_PROMPT } from './coachingPrompt.js';
 
@@ -17,6 +18,7 @@ const SCHEMA = {
     uncertainties: { type: 'array', items: { type: 'string' } },
     coachingPoint: { type: 'string' },
     sceneChanged: { type: 'boolean' },
+    delivery: DELIVERY_SCHEMA,
   },
   required: [
     'shouldSpeak',
@@ -26,6 +28,7 @@ const SCHEMA = {
     'uncertainties',
     'coachingPoint',
     'sceneChanged',
+    'delivery',
   ],
   additionalProperties: false,
 };
@@ -99,7 +102,7 @@ export function createVisionAdviceHandler(options: {
         ? [
             {
               type: 'text',
-              text: `LOCAL CV INPUT ONLY: No images are supplied. These are tentative local detector/tracker observations, not a complete scene description. Image position/motion/size change is not physical distance, velocity, approach direction or collision risk. IDs can switch. Do not infer pavement, crossings, parked state, lanes, turn intention, jurisdiction, signal colors, speed limits, complete stops, arrival order or all-way controls from this payload. A stop sign detection does not establish which approach it controls. Those facts are UNKNOWN. Use a short object-specific observation/preparation cue only when the supplied observations support it; otherwise choose silence. Do not copy absent context from written examples. Previous detector snapshots: ${JSON.stringify(input.previousScenes ?? [])}. Current snapshot: ${JSON.stringify(input.scene)}.`,
+              text: `LOCAL CV INPUT ONLY: No images are supplied. These are tentative local detector/tracker observations, not a complete scene description. Image position/motion/size change is not physical distance, velocity, approach direction or collision risk. IDs can switch. Do not infer pavement, crossings, parked state, lanes, turn intention, jurisdiction, signal colors, speed limits, complete stops, arrival order or all-way controls from this payload. A stop sign detection does not establish which approach it controls, so never ask the learner which approach it controls. Those facts are UNKNOWN. Use a short object-specific observation/preparation cue only when the supplied observations support it; otherwise choose silence. Do not copy absent context from written examples. Previous detector snapshots: ${JSON.stringify(input.previousScenes ?? [])}. Current snapshot: ${JSON.stringify(input.scene)}.`,
             },
           ]
         : input.frames!.flatMap((frame) => [
@@ -114,7 +117,7 @@ export function createVisionAdviceHandler(options: {
           ]);
       content.push({
         type: 'text',
-        text: `Previous model observations (not verified facts; uncertainty must be preserved): ${JSON.stringify(input.sceneMemory ?? [])}. Recent suggestions: ${JSON.stringify(input.recentAdvice)}. Analyze the current scene.`,
+        text: `Previous model observations (not verified facts; uncertainty must be preserved): ${JSON.stringify(input.sceneMemory ?? [])}. Recent suggestions: ${JSON.stringify(input.recentAdvice)}. ${input.quietForMs === undefined ? 'Quiet time unknown.' : `The voice has been quiet for ${(input.quietForMs / 1000).toFixed(0)} seconds.`} Analyze the current scene.`,
       });
       const model = options.getModel?.() || 'claude-sonnet-5-5';
       const fastSonnet = model === 'claude-sonnet-5-5';

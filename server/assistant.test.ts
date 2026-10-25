@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseDelivery, type TripContext } from '../shared/assistant.ts';
+import type { TripContext } from '../shared/assistant.ts';
+import { parseDelivery } from '../shared/delivery.ts';
 import { unsafeReason } from '../shared/safeWording.ts';
 import {
   ANSWER_EXAMPLES,
@@ -91,7 +92,7 @@ describe('assistant endpoint', () => {
     });
   });
 
-  it('asks for emotion and pace in the answer schema and emotion only for cues', async () => {
+  it('asks for the full delivery in answers and emotion, speed and volume for cues', async () => {
     const s = setup({ say: 'ok', emotion: 'calm', pace: 'normal' });
     await s.post(ask('hello'));
     await s.post({ mode: 'cue', feature: { kind: 'crosswalk' }, context });
@@ -101,8 +102,8 @@ describe('assistant endpoint', () => {
           output_config: { format: { schema: { required: string[] } } };
         }
       ).output_config.format.schema.required;
-    expect(schema(0)).toEqual(['say', 'action', 'emotion', 'pace']);
-    expect(schema(1)).toEqual(['say', 'emotion']);
+    expect(schema(0)).toEqual(['say', 'action', 'emotion', 'pace', 'speed', 'volume']);
+    expect(schema(1)).toEqual(['say', 'emotion', 'speed', 'volume']);
   });
 
   it('returns a repeat action without speaking extra text', async () => {

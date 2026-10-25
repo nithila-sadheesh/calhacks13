@@ -1,4 +1,4 @@
-import { parseDelivery } from '../../../shared/assistant.ts';
+import { parseDelivery } from '../../../shared/delivery.ts';
 import type { Delivery } from '../../../shared/types.ts';
 import { CARTESIA_VERSION, SAMPLE_RATE, SONIC_MODEL, VOICE_ID } from './config.ts';
 import { decodePcm } from './pcm.ts';
@@ -6,14 +6,19 @@ import { decodePcm } from './pcm.ts';
 // Sonic treats speed as guidance and small changes are hard to hear, so 'slower' is a clear step.
 export const SLOWER_SPEED = 0.8;
 
-// Volume is never set: loudness stays the same for every line. Anything off the shared list falls
-// back to the calm default rather than reaching Sonic.
-export function generationConfig(delivery?: Delivery): { emotion: string; speed?: number } {
+export type GenerationConfig = { emotion: string; speed?: number; volume?: number };
+
+// Claude's delivery for this sentence becomes Sonic's generation_config. Lines without one
+// (templates, clips) keep the calm default at Sonic's own speed and volume. Anything off the shared
+// list or out of bounds falls back to that default rather than reaching Sonic.
+export function generationConfig(delivery?: Delivery): GenerationConfig {
   const checked = parseDelivery(delivery);
   if (!checked) return { emotion: 'calm' };
-  return checked.pace === 'slower'
-    ? { emotion: checked.emotion, speed: SLOWER_SPEED }
-    : { emotion: checked.emotion };
+  const config: GenerationConfig = { emotion: checked.emotion };
+  const speed = checked.speed ?? (checked.pace === 'slower' ? SLOWER_SPEED : undefined);
+  if (speed !== undefined) config.speed = speed;
+  if (checked.volume !== undefined) config.volume = checked.volume;
+  return config;
 }
 
 export type SonicMessage =

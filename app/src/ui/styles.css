@@ -1,5 +1,5 @@
-/* App-wide styles. `.panel`, `.overlay` and `.overlay-note` are used by the owners' slot
-   components; keep those class names stable. */
+/* App-wide styles. `.panel`, `.overlay` and `.cv-box` are used by the owners' slot components;
+   keep those class names stable. */
 :root {
   --bg: #0b0d10;
   --surface: #13171c;
@@ -318,15 +318,6 @@ button.secondary:focus-visible,
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.overlay-note {
-  position: absolute;
-  left: 0.5rem;
-  top: 0.5rem;
-  background: #000a;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
 }
 
 /* Captions: the primary readable channel. A small source tag (Reminder / Warning) above the
@@ -727,16 +718,6 @@ button.secondary:focus-visible,
   }
 }
 
-.coaching-evidence {
-  pointer-events: auto;
-  max-height: 12rem;
-  max-width: min(40rem, 75vw);
-  overflow: auto;
-}
-.coaching-evidence summary {
-  cursor: pointer;
-}
-
 .cv-box {
   position: absolute;
   border: 2px solid #38bdf8;
@@ -746,11 +727,6 @@ button.secondary:focus-visible,
   color: #fff;
   font-size: 0.75rem;
   padding: 0.1rem 0.25rem;
-}
-.overlay-note {
-  top: 3.25rem;
-  z-index: 1;
-  max-width: calc(100% - 1rem);
 }
 
 /* The driving layout is narrow even on desktop; long diagnostic reasons need a full row. */

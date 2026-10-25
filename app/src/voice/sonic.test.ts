@@ -59,13 +59,30 @@ describe('Sonic generation config', () => {
     });
   });
 
-  it("maps Claude's delivery to emotion and speed, and never sets volume", () => {
+  it("maps Claude's delivery to emotion, speed and volume", () => {
     expect(generationConfig({ emotion: 'confident', pace: 'normal' })).toEqual({
       emotion: 'confident',
     });
     expect(generationConfig({ emotion: 'sympathetic', pace: 'slower' })).toEqual({
       emotion: 'sympathetic',
       speed: SLOWER_SPEED,
+    });
+    expect(
+      generationConfig({ emotion: 'determined', pace: 'normal', speed: 1.15, volume: 1.2 }),
+    ).toEqual({ emotion: 'determined', speed: 1.15, volume: 1.2 });
+    // An explicit speed wins over the pace shorthand.
+    expect(generationConfig({ emotion: 'calm', pace: 'slower', speed: 0.9 })).toEqual({
+      emotion: 'calm',
+      speed: 0.9,
+    });
+  });
+
+  it('drops a delivery whose speed or volume is outside the safe band', () => {
+    expect(generationConfig({ emotion: 'confident', pace: 'normal', speed: 1.5 })).toEqual({
+      emotion: 'calm',
+    });
+    expect(generationConfig({ emotion: 'confident', pace: 'normal', volume: 2 })).toEqual({
+      emotion: 'calm',
     });
   });
 

@@ -21,6 +21,12 @@ export const ANALYSIS_INTERVAL_MS = 3000;
 export const SCENE_REFRESH_MS = 5000;
 export const MAX_RESPONSE_AGE_MS = 8000;
 export const ADVICE_TTL_MS = 10000;
+// Local reminders only fill real silences, and the gap varies so they never sound like a timer.
+export const QUIET_GAPS_MS = [12000, 16000, 20000];
+// A local reminder is not repeated word for word within this window.
+export const REMINDER_REPEAT_MS = 45000;
+// Claude's own lines need this much quiet after the previous line finished.
+export const CLAUDE_MIN_GAP_MS = 5000;
 
 async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<CoachingResponse> {
   const response = await fetch('/api/vision-advice', {
@@ -68,10 +74,13 @@ export function createVisionModule(
       let sceneMemory: SceneMemory[] = [];
       let previousScenes: CvScene[] = [];
       const recent = new Map<string, number>();
+      const reminders = new Map<string, number>();
       let framesProcessed = 0;
       let requestSequence = 0;
       let lastAdviceMs: number | undefined;
       let speakingId: string | undefined;
+      // When the voice last started or finished any line; undefined until something is spoken.
+      let lastLineMs: number | undefined;
       let fallbackTurn = 0;
       const diagnostic = (id: number, changes: Partial<CoachingDiagnostic>) => {
         const current = coachingStore.get();
@@ -96,12 +105,14 @@ export function createVisionModule(
         sceneMemory = [];
         previousScenes = [];
         recent.clear();
+        reminders.clear();
         lastTripMs = undefined;
         lastRequestMs = -Infinity;
         lastSentKey = undefined;
         framesProcessed = 0;
         lastAdviceMs = undefined;
         speakingId = undefined;
+        lastLineMs = undefined;
         fallbackTurn = 0;
         if (!stopped)
           coachingStore.set({
@@ -116,10 +127,13 @@ export function createVisionModule(
       const off = [
         ctx.bus.on('speak', ({ id }) => {
           speakingId = id;
-          lastAdviceMs = ctx.clock.nowMs();
+          lastAdviceMs = lastLineMs = ctx.clock.nowMs();
         }),
         ctx.bus.on('speechEnded', ({ id }) => {
-          if (speakingId === id) speakingId = undefined;
+          if (speakingId !== id) return;
+          speakingId = undefined;
+          // Gaps count from when the voice stopped, not from when the line was queued.
+          lastAdviceMs = lastLineMs = ctx.clock.nowMs();
         }),
         ctx.bus.on('tripReset', () => {
           reset();
@@ -199,16 +213,28 @@ export function createVisionModule(
           cvLatencyMs: performance.now() - began,
         });
         if (lastAdviceMs === undefined) lastAdviceMs = tripMs;
-        if (options.periodicReminders !== false && !speakingId && tripMs - lastAdviceMs >= 3000) {
-          const text = fallbackAdvice(scene, fallbackTurn++);
-          lastAdviceMs = tripMs;
-          ctx.bus.emit('visionAdvice', {
-            id: `vision-fallback-${++sequence}`,
-            text,
-            reason: 'Periodic local observation reminder; no new Claude recommendation available.',
-            tripMs,
-            expiresMs: tripMs + 3000,
-          });
+        // A pending Claude request may produce a better line, so the local reminder waits for it.
+        if (
+          options.periodicReminders !== false &&
+          !speakingId &&
+          !controller &&
+          tripMs - lastAdviceMs >= QUIET_GAPS_MS[fallbackTurn % QUIET_GAPS_MS.length]!
+        ) {
+          const reminder = fallbackAdvice(scene, fallbackTurn);
+          const said = reminders.get(reminder.text);
+          if (said === undefined || tripMs - said >= REMINDER_REPEAT_MS) {
+            fallbackTurn++;
+            lastAdviceMs = tripMs;
+            reminders.set(reminder.text, tripMs);
+            ctx.bus.emit('visionAdvice', {
+              id: `vision-fallback-${++sequence}`,
+              text: reminder.text,
+              reason: 'Local observation reminder after a quiet stretch; no new Claude coaching.',
+              tripMs,
+              expiresMs: tripMs + 3000,
+              delivery: reminder.delivery,
+            });
+          }
         }
         const key = sceneKey(scene);
         if (
@@ -231,6 +257,7 @@ export function createVisionModule(
           previousScenes: previousScenes.slice(-3),
           sceneMemory,
           recentAdvice: [...recent.keys()].slice(-3),
+          quietForMs: speakingId ? 0 : Math.max(0, tripMs - (lastLineMs ?? 0)),
         };
         previousScenes = [...previousScenes, scene].slice(-3);
         const started = performance.now();
@@ -313,6 +340,10 @@ export function createVisionModule(
               diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });
               return;
             }
+            if (speakingId || (lastLineMs !== undefined && now - lastLineMs < CLAUDE_MIN_GAP_MS)) {
+              diagnostic(requestId, { outcome: 'Suppressed: too soon after the previous line' });
+              return;
+            }
             diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });
             lastAdviceMs = now;
             recent.set(result.message, now);
@@ -322,6 +353,7 @@ export function createVisionModule(
               reason: result.reason,
               tripMs,
               expiresMs: tripMs + ADVICE_TTL_MS,
+              ...(result.delivery ? { delivery: result.delivery } : {}),
             });
           })
           .catch((error: unknown) => {

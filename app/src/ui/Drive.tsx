@@ -3,7 +3,7 @@
 // plays the recorded drive; live feeds the rear camera into the same <video>.
 // Phase 2 (once the context is rendered): start every module. Child effects run before parent
 // effects, so every panel has subscribed to the bus before any module's start() can emit.
-// Slots: VisionOverlay over the video; VoicePanel (first, so the microphone sits right under the
+// Slots: VisionOverlay draws local CV boxes over the video (no text panel); VoicePanel (first, so the microphone sits right under the
 // captions on a phone) and UpcomingPanel in the side panel.
 import { useEffect, useRef, useState } from 'react';
 import type { AppModule, Bus, ModuleContext, TripSource } from '../../../shared/types.ts';
@@ -172,7 +172,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
             }
           />
           {ctx && <StatusStrip live={live} warning={warningShort} />}
-          {ctx && <VisionOverlay ctx={ctx} />}
+          {ctx && <VisionOverlay />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
         <Captions bus={bus} />

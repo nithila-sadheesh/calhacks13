@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { createVisionAdviceHandler } from './visionAdvice.ts';
+import { COACHING_PROMPT, createVisionAdviceHandler } from './visionAdvice.ts';
 const input = {
   frames: [
     { tripMs: 1000, jpeg: '/9j/AA==' },
@@ -123,14 +123,12 @@ it('does not apply Sonnet-specific thinking options to an overridden model', asy
 });
 
 it('sends CV observations as text without image blocks or invented scene fields', async () => {
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockResolvedValue(
-      Response.json({
-        stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(advice) }],
-      }),
-    );
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
   const handler = createVisionAdviceHandler({ getKey: () => 'test-only-key', fetcher });
   const scene = {
     tripMs: 1000,
@@ -155,4 +153,26 @@ it('sends CV observations as text without image blocks or invented scene fields'
   };
   expect(body.messages[0]!.content.every((block) => block.type === 'text')).toBe(true);
   expect(body.messages[0]!.content[0]!.text).toContain('physical distance');
+});
+
+it('asks Claude for a delivery, tells it the quiet time and never suggests asking what a sign controls', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(advice) }],
+    }),
+  );
+  const handler = createVisionAdviceHandler({ getKey: () => 'test-only-key', fetcher });
+  const scene = { tripMs: 30000, objects: [] };
+  await handler(request({ scene, recentAdvice: [], quietForMs: 21000 }));
+  const body = JSON.parse(String(fetcher.mock.calls[0]![1]?.body)) as {
+    system: Array<{ text: string }>;
+    messages: Array<{ content: Array<{ text: string }> }>;
+    output_config: { format: { schema: { required: string[] } } };
+  };
+  expect(body.output_config.format.schema.required).toContain('delivery');
+  expect(body.messages[0]!.content.at(-1)!.text).toContain('quiet for 21 seconds');
+  expect(COACHING_PROMPT).toContain('Speed (');
+  // The only mentions of "controls" left in the prompt forbid the topic; no example asks it.
+  expect(COACHING_PROMPT).not.toMatch(/check which approach|approaches' controls/i);
 });

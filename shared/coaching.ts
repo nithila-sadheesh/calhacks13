@@ -1,4 +1,6 @@
 import { parseCvScene, type CvScene } from './cvScene.js';
+import { parseDelivery } from './delivery.js';
+import type { Delivery } from './types.ts';
 // VLM wire format and validation shared by the browser and server.
 export type VideoFrame = { tripMs: number; jpeg: string };
 export type SceneMemory = { tripMs: number; observations: string[]; uncertainties: string[] };
@@ -8,6 +10,7 @@ export type CoachingRequest = {
   previousScenes?: CvScene[];
   recentAdvice: string[];
   sceneMemory?: SceneMemory[];
+  quietForMs?: number; // time since the voice last finished a line, so Claude can pace itself
 };
 export type CoachingResponse = {
   shouldSpeak: boolean;
@@ -17,6 +20,7 @@ export type CoachingResponse = {
   uncertainties?: string[];
   coachingPoint?: string;
   sceneChanged?: boolean;
+  delivery?: Delivery; // how Claude wants the message spoken; ignored with silence
 };
 export const SCENE_MEMORY_MS = 20_000;
 const cleanText = (value: unknown, max: number): value is string =>
@@ -107,6 +111,9 @@ export function parseCoachingResponse(value: unknown): CoachingResponse | undefi
     result.coachingPoint = item.coachingPoint;
     result.sceneChanged = item.sceneChanged;
   }
+  // A bad delivery only loses the voice settings, never the coaching line itself.
+  const delivery = item.shouldSpeak ? parseDelivery(item.delivery) : undefined;
+  if (delivery) result.delivery = delivery;
   return result;
 }
 
@@ -145,6 +152,14 @@ export function parseCoachingRequest(value: unknown): CoachingRequest | undefine
       if (!memory) return;
       result.sceneMemory = memory;
     }
+    // Pacing context only: a malformed value is ignored rather than failing the coaching request.
+    if (
+      typeof item.quietForMs === 'number' &&
+      Number.isFinite(item.quietForMs) &&
+      item.quietForMs >= 0 &&
+      item.quietForMs <= 3_600_000
+    )
+      result.quietForMs = Math.round(item.quietForMs);
     return result;
   }
   if (

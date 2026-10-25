@@ -70,3 +70,31 @@ it('preserves bounded structured observations and rejects incomplete evidence fi
     parseCoachingResponse({ shouldSpeak: false, message: '', reason: '', observations: [] }),
   ).toBeUndefined();
 });
+
+it("keeps Claude's delivery with spoken coaching and drops it from silence or when malformed", () => {
+  const base = {
+    shouldSpeak: true,
+    message: 'Stop sign ahead; prepare for a complete stop.',
+    reason: 'Sign.',
+  };
+  const delivery = { emotion: 'determined', pace: 'normal', speed: 1.1, volume: 1.15 };
+  expect(parseCoachingResponse({ ...base, delivery })?.delivery).toEqual(delivery);
+  expect(parseCoachingResponse({ ...base, delivery: { emotion: 'angry' } })).toEqual(base);
+  expect(
+    parseCoachingResponse({ shouldSpeak: false, message: '', reason: 'Quiet.', delivery })
+      ?.delivery,
+  ).toBeUndefined();
+});
+
+it('passes quiet time to the server only when it is a sane number', () => {
+  const scene = { tripMs: 5000, objects: [] };
+  expect(parseCoachingRequest({ scene, recentAdvice: [], quietForMs: 12345.6 })?.quietForMs).toBe(
+    12346,
+  );
+  for (const quietForMs of [-1, Number.NaN, '5000', 4_000_000])
+    expect(parseCoachingRequest({ scene, recentAdvice: [], quietForMs })).toEqual({
+      scene,
+      previousScenes: [],
+      recentAdvice: [],
+    });
+});
