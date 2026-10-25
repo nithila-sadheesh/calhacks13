@@ -34,7 +34,8 @@ test('live: camera starts, route and vision coaching play, end stops the camera'
 }) => {
   const { problems } = await startLive(page, 'map,vision,voice');
   await expect(video(page)).toHaveJSProperty('paused', false);
-  await expect(page.locator('.overlay, .status-strip')).toHaveCount(0);
+  await expect(page.locator('.overlay')).toHaveCount(1);
+  await expect(page.locator('.overlay-note, .status-strip')).toHaveCount(0);
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.srcObject !== null)).toBe(true);
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.controls)).toBe(false);
 

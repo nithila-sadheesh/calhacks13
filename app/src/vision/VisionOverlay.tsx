@@ -11,7 +11,7 @@ const LABELS = {
   ready: 'Video analysis complete',
   error: 'Video analysis unavailable',
 };
-export function VisionOverlay({ ctx }: PanelProps) {
+export function VisionOverlay({ ctx, showDetails = true }: PanelProps & { showDetails?: boolean }) {
   const lastAdvice = useEvents(ctx.bus, 'visionAdvice').at(-1);
   const simulated = lastAdvice?.id.startsWith('mock-') ? lastAdvice : undefined;
   const snapshot = useSyncExternalStore(coachingStore.subscribe, coachingStore.get);
@@ -33,58 +33,63 @@ export function VisionOverlay({ ctx }: PanelProps) {
           </span>
         </div>
       ))}
-      <div className="overlay-note" role="status">
-        <strong>
-          {simulated?.id.startsWith('mock-') ? 'Simulated video coaching' : LABELS[snapshot.status]}
-        </strong>
-        {snapshot.cvScene && (
-          <p>
-            Local CV: {snapshot.cvScene.objects.length} stable objects · {snapshot.cvFrames} frames
-            processed · {Math.round(snapshot.cvLatencyMs ?? 0)} ms/frame
-          </p>
-        )}
-        {(snapshot.message ?? simulated?.text) && <p>{snapshot.message ?? simulated?.text}</p>}
-        {snapshot.reason && <p>{snapshot.reason}</p>}
-        {snapshot.observations && (
-          <details className="coaching-evidence">
-            <summary>What the coach observed</summary>
-            <ul>
-              {snapshot.observations.map((observation, index) => (
-                <li key={index}>{observation}</li>
-              ))}
-            </ul>
-            {snapshot.uncertainties && snapshot.uncertainties.length > 0 && (
-              <>
-                <strong>Not established</strong>
-                <ul>
-                  {snapshot.uncertainties.map((uncertainty, index) => (
-                    <li key={index}>{uncertainty}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {snapshot.coachingPoint && <p>Teaching point: {snapshot.coachingPoint}</p>}
-          </details>
-        )}
-        {snapshot.diagnostics && snapshot.diagnostics.length > 0 && (
-          <details className="coaching-evidence">
-            <summary>Coaching request diagnostics ({snapshot.diagnostics.length})</summary>
+      {showDetails && (
+        <div className="overlay-note" role="status">
+          <strong>
+            {simulated?.id.startsWith('mock-')
+              ? 'Simulated video coaching'
+              : LABELS[snapshot.status]}
+          </strong>
+          {snapshot.cvScene && (
             <p>
-              Local record; retained after playback ends. Copy this JSON to diagnose missing advice.
+              Local CV: {snapshot.cvScene.objects.length} stable objects · {snapshot.cvFrames}{' '}
+              frames processed · {Math.round(snapshot.cvLatencyMs ?? 0)} ms/frame
             </p>
-            <pre style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-              {JSON.stringify(snapshot.diagnostics, null, 2)}
-            </pre>
-          </details>
-        )}
-        {snapshot.error && <p>{snapshot.error}</p>}
-        {snapshot.latencyMs !== undefined && (
-          <small>
-            Analysis: {(snapshot.latencyMs / 1000).toFixed(1)} s · frames through{' '}
-            {((snapshot.frameTripMs ?? 0) / 1000).toFixed(1)} s
-          </small>
-        )}
-      </div>
+          )}
+          {(snapshot.message ?? simulated?.text) && <p>{snapshot.message ?? simulated?.text}</p>}
+          {snapshot.reason && <p>{snapshot.reason}</p>}
+          {snapshot.observations && (
+            <details className="coaching-evidence">
+              <summary>What the coach observed</summary>
+              <ul>
+                {snapshot.observations.map((observation, index) => (
+                  <li key={index}>{observation}</li>
+                ))}
+              </ul>
+              {snapshot.uncertainties && snapshot.uncertainties.length > 0 && (
+                <>
+                  <strong>Not established</strong>
+                  <ul>
+                    {snapshot.uncertainties.map((uncertainty, index) => (
+                      <li key={index}>{uncertainty}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {snapshot.coachingPoint && <p>Teaching point: {snapshot.coachingPoint}</p>}
+            </details>
+          )}
+          {snapshot.diagnostics && snapshot.diagnostics.length > 0 && (
+            <details className="coaching-evidence">
+              <summary>Coaching request diagnostics ({snapshot.diagnostics.length})</summary>
+              <p>
+                Local record; retained after playback ends. Copy this JSON to diagnose missing
+                advice.
+              </p>
+              <pre style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                {JSON.stringify(snapshot.diagnostics, null, 2)}
+              </pre>
+            </details>
+          )}
+          {snapshot.error && <p>{snapshot.error}</p>}
+          {snapshot.latencyMs !== undefined && (
+            <small>
+              Analysis: {(snapshot.latencyMs / 1000).toFixed(1)} s · frames through{' '}
+              {((snapshot.frameTripMs ?? 0) / 1000).toFixed(1)} s
+            </small>
+          )}
+        </div>
+      )}
     </div>
   );
 }

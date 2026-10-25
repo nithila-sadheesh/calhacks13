@@ -11,6 +11,7 @@ import { holdWakeLock, openCamera } from '../replay/camera.ts';
 import { createLive } from '../replay/live.ts';
 import { createReplay } from '../replay/replay.ts';
 import { loadFixtures } from '../replay/fixtures.ts';
+import { VisionOverlay } from '../vision/VisionOverlay.tsx';
 import { voiceModule } from '../voice/index.ts';
 import { VoicePanel } from '../voice/VoicePanel.tsx';
 import { Assistant } from './Assistant.tsx';
@@ -167,6 +168,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
               !live && setError('Could not load the drive video (/demo-drive/video.mp4).')
             }
           />
+          {ctx && live && <VisionOverlay ctx={ctx} showDetails={false} />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
         <Captions bus={bus} />
