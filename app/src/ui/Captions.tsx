@@ -35,8 +35,15 @@ export function Captions({ bus }: { bus: Bus }) {
   }, [bus]);
 
   return (
-    <p className={`captions${caption?.urgent ? ' captions-urgent' : ''}`} aria-live="polite">
-      {caption?.text ?? ''}
-    </p>
+    <div className={`captions${caption?.urgent ? ' captions-urgent' : ''}`} aria-live="polite">
+      {caption ? (
+        <>
+          <span className="caption-tag">{caption.urgent ? 'Warning' : 'Reminder'}</span>
+          <p className="caption-line">{caption.text}</p>
+        </>
+      ) : (
+        <p className="caption-empty">Spoken lines appear here.</p>
+      )}
+    </div>
   );
 }

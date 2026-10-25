@@ -34,14 +34,16 @@ export function App({ bus, modules }: AppProps) {
           <li>Location is used on this device to time route reminders and is never sent.</li>
         </ul>
       </section>
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed(e.target.checked)}
-        />
-        A licensed adult is in the passenger seat.
-      </label>
+      <section className="panel">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+          />
+          A licensed adult is in the passenger seat.
+        </label>
+      </section>
       <div className="actions">
         <button className="primary" disabled={!confirmed} onClick={() => setSource('live')}>
           Start live drive

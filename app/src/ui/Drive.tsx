@@ -15,9 +15,13 @@ import { loadFixtures } from '../replay/fixtures.ts';
 import { VisionOverlay } from '../vision/VisionOverlay.tsx';
 import { voiceModule } from '../voice/index.ts';
 import { VoicePanel } from '../voice/VoicePanel.tsx';
+import { Assistant } from './Assistant.tsx';
 import { Captions } from './Captions.tsx';
 import { DataUsePanel } from './DataUsePanel.tsx';
+import { MicOrb } from './MicOrb.tsx';
+import { StatusStrip } from './StatusStrip.tsx';
 import { Timeline } from './Timeline.tsx';
+import { useWarningActive } from './useWarningActive.ts';
 
 type DriveProps = { bus: Bus; modules: AppModule[]; source: TripSource };
 type Live = ReturnType<typeof createLive>;
@@ -35,6 +39,8 @@ export function Drive({ bus, modules, source }: DriveProps) {
   const [aspect, setAspect] = useState(16 / 9);
   const realVoice = modules.includes(voiceModule);
   const canPlay = ready && (!realVoice || soundEnabled);
+  const warning = useWarningActive(bus);
+  const warningShort = warning ? (warning.split('.')[0] ?? warning) : null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -133,12 +139,13 @@ export function Drive({ bus, modules, source }: DriveProps) {
 
   const ctx = session?.ctx;
   const live = source === 'live';
+  const voiceActive = realVoice && (live ? trip === 'running' : canPlay);
   return (
     <main className="drive">
       <section className="stage">
         {/* Capped at 70% of the screen height so portrait video leaves room for captions. */}
         <div
-          className="video-wrap"
+          className={`video-wrap${warning ? ' is-warning' : ''}`}
           style={{ aspectRatio: aspect, maxWidth: `min(100%, calc(70svh * ${aspect}))` }}
         >
           <video
@@ -164,9 +171,12 @@ export function Drive({ bus, modules, source }: DriveProps) {
               !live && setError('Could not load the drive video (/demo-drive/video.mp4).')
             }
           />
+          {ctx && <StatusStrip live={live} warning={warningShort} />}
           {ctx && <VisionOverlay ctx={ctx} />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
+        <Captions bus={bus} />
+        <Assistant bus={bus} />
         {ready && live && trip !== 'running' && (
           <button
             type="button"
@@ -180,6 +190,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
         {ready && !live && realVoice && !soundEnabled && (
           <button
             type="button"
+            className="secondary trip-button"
             onClick={() => {
               void voiceModule
                 .enableAudio()
@@ -190,7 +201,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
             Enable replay sound
           </button>
         )}
-        <Captions bus={bus} />
+        {ctx && ready && realVoice && <MicOrb bus={bus} active={voiceActive} />}
         {live && trip === 'running' && (
           <button type="button" className="secondary trip-button" onClick={endLive}>
             End drive
@@ -216,7 +227,10 @@ export function Drive({ bus, modules, source }: DriveProps) {
         {ctx && <UpcomingPanel ctx={ctx} />}
         <DataUsePanel bus={bus} />
       </aside>
-      <Timeline bus={bus} />
+      <details className="timeline-collapse">
+        <summary>Timeline</summary>
+        <Timeline bus={bus} />
+      </details>
     </main>
   );
 }

@@ -18,11 +18,12 @@ export function DataUsePanel({ bus }: { bus: Bus }) {
       ) : (
         <ul className="data-rows">
           {sent.map((d, i) => (
-            <li key={i}>
-              <span className="muted">
-                {(d.tripMs / 1000).toFixed(1)} s · {DESTINATIONS[d.destination]}
-              </span>{' '}
-              {d.summary}
+            <li key={i} className="data-row">
+              <span className="data-row-head">
+                <span className="data-row-dest">{DESTINATIONS[d.destination]}</span>
+                <span>{(d.tripMs / 1000).toFixed(1)} s</span>
+              </span>
+              <span>{d.summary}</span>
             </li>
           ))}
         </ul>
