@@ -83,12 +83,12 @@ npm run dev               # open http://localhost:5173
 
 ## Known limitations
 
-| Limitation | What would fix it |
+| Limitation | Future work/fixes |
 | --- | --- |
 | **Sees in 2D.** Can't judge real distance or speed, or read lane markings. | Depth estimation or a road-scene model |
-| **Coaching lags by a second or two** while Claude responds. | A small on-device model for instant first cues |
+| **Coaching latency** while Claude responds. | A small on-device model for instant first cues |
 | **Route reminders need mapped areas.** Elsewhere it still coaches from the camera. | Fetch map data live for any route |
-| **Tap-to-talk, English only.** | A hands-free wake word and more languages |
+| **Tap-to-talk** | A hands-free wake word and more languages |
 
 ---
 
