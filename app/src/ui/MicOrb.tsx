@@ -32,9 +32,11 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
         setPendingReply(true);
         setAnswering(false);
       }),
-      bus.on('assistantReply', () => {
+      bus.on('assistantReply', (reply) => {
         setPendingReply(false);
-        setAnswering(true);
+        // Only a spoken text answer counts as "answering"; mute/unmute/repeat actions do not, so
+        // the orb does not stick on "Speaking" when a reply has no spoken line.
+        setAnswering(Boolean(reply.text));
       }),
       bus.on('speechEnded', () => setAnswering(false)),
       bus.on('tripReset', () => {
@@ -44,6 +46,17 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
     ];
     return () => offs.forEach((off) => off());
   }, [bus]);
+
+  // Safety net: never let "Thinking" or "Speaking" stick if a reply (or its spoken line) never
+  // arrives — the orb always returns to "Tap to ask".
+  useEffect(() => {
+    if (!pendingReply && !answering) return;
+    const timer = setTimeout(() => {
+      setPendingReply(false);
+      setAnswering(false);
+    }, 20_000);
+    return () => clearTimeout(timer);
+  }, [pendingReply, answering]);
 
   const state: OrbState =
     micStatus === 'error'
