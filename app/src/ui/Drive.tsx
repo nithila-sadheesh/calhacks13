@@ -18,6 +18,7 @@ import { Assistant } from './Assistant.tsx';
 import { Captions } from './Captions.tsx';
 import { DataUsePanel } from './DataUsePanel.tsx';
 import { MicOrb } from './MicOrb.tsx';
+import { StatusStrip } from './StatusStrip.tsx';
 import { Timeline } from './Timeline.tsx';
 import { useWarningActive } from './useWarningActive.ts';
 
@@ -38,6 +39,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
   const realVoice = modules.includes(voiceModule);
   const canPlay = ready && (!realVoice || soundEnabled);
   const warning = useWarningActive(bus);
+  const warningShort = warning ? (warning.split('.')[0] ?? warning) : null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -168,6 +170,7 @@ export function Drive({ bus, modules, source }: DriveProps) {
               !live && setError('Could not load the drive video (/demo-drive/video.mp4).')
             }
           />
+          {ctx && live && <StatusStrip live={live} warning={warningShort} />}
           {ctx && live && <VisionOverlay ctx={ctx} showDetails={false} />}
         </div>
         {!ready && !error && <p role="status">Loading drive modules…</p>}
