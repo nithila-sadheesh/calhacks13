@@ -34,6 +34,7 @@ test('live: camera starts, route and vision coaching play, end stops the camera'
 }) => {
   const { problems } = await startLive(page, 'map,vision,voice');
   await expect(video(page)).toHaveJSProperty('paused', false);
+  await expect(page.locator('.overlay, .status-strip')).toHaveCount(0);
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.srcObject !== null)).toBe(true);
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.controls)).toBe(false);
 
@@ -71,7 +72,7 @@ test('live: real map and vision run on device GPS and the camera stream', async 
   // Inference keeps up on the live stream: no stall reported over a few seconds.
   await page.waitForTimeout(4000);
   expect(logs.filter((l) => l.includes('camera health down'))).toEqual([]);
-  // The box takes the camera's shape, so overlay boxes line up with the picture.
+  // The video container follows the camera aspect ratio.
   const shape = await video(page).evaluate((v: HTMLVideoElement) => {
     const box = v.parentElement!.getBoundingClientRect();
     return { video: v.videoWidth / v.videoHeight, box: box.width / box.height };
