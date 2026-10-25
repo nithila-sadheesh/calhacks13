@@ -11,7 +11,7 @@ type OrbState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 
 const LABELS: Record<OrbState, string> = {
   idle: 'Tap to ask',
   connecting: 'Connecting…',
-  listening: 'Listening…',
+  listening: 'Listening… tap to send',
   thinking: 'Thinking…',
   speaking: 'Speaking',
   error: 'Tap to try again',
@@ -71,7 +71,11 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
               ? 'speaking'
               : 'idle';
 
-  const needsSound = active && !audioReady;
+  // Playback may be suspended while capture owns the audio session. The next tap must
+  // still stop/send the recording rather than switching the session back to playback.
+  const captureBusy =
+    micStatus === 'connecting' || micStatus === 'listening' || micStatus === 'transcribing';
+  const needsSound = active && !audioReady && !captureBusy;
   const label = !active ? LABELS.idle : needsSound ? 'Enable sound' : LABELS[state];
 
   const onClick = () => {
@@ -89,13 +93,18 @@ export function MicOrb({ bus, active }: { bus: Bus; active: boolean }) {
         type="button"
         className={`mic-orb is-${state}`}
         aria-label={label}
-        aria-pressed={state === 'listening'}
-        disabled={!active}
+        aria-pressed={state === 'listening' || state === 'connecting'}
+        disabled={!active || micStatus === 'transcribing'}
         onClick={onClick}
       >
         <OrbIcon state={state} />
       </button>
-      <p className="mic-orb-label">{label}</p>
+      <p className="mic-orb-label" role="status">
+        {label}
+      </p>
+      {active && state === 'idle' && !needsSound && (
+        <p className="muted">Tap once, speak after the tone, then tap again to send.</p>
+      )}
     </div>
   );
 }

@@ -63,6 +63,7 @@ export function VoicePanel({ ctx }: PanelProps) {
       {!audioReady && (
         <button
           type="button"
+          disabled={active || status === 'transcribing'}
           onClick={() => {
             setAudioError(false);
             void voiceModule.enableAudio().catch(() => setAudioError(true));
@@ -85,6 +86,7 @@ export function VoicePanel({ ctx }: PanelProps) {
           className={`mic-button mic-${status}`}
           aria-label={active ? 'Stop and send' : 'Talk'}
           aria-pressed={active}
+          disabled={status === 'transcribing'}
           onClick={() => voiceModule.toggleTalk()}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">

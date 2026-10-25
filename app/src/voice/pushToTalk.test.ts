@@ -248,3 +248,53 @@ describe('tap-to-talk', () => {
     s.mic.cancel();
   });
 });
+
+it('preserves the beginning of a question when Ink takes more than three seconds to connect', async () => {
+  const s = setup();
+  let connect!: (handle: InkHandle) => void;
+  s.ink.mockImplementationOnce(async () => new Promise<InkHandle>((r) => (connect = r)));
+  const pending = s.mic.start();
+  await settle();
+  const chunks = Array.from({ length: 6 }, (_, i) => new Float32Array(48000).fill(i / 10));
+  for (const chunk of chunks) s.samples(chunk);
+  s.mic.toggle();
+  connect({ send: s.send, finish: s.finish, cancel: s.cancel });
+  await pending;
+  expect(s.send.mock.calls.map(([chunk]) => (chunk as Float32Array)[0])).toEqual(
+    chunks.map((chunk) => chunk[0]),
+  );
+  expect(s.sent).toHaveBeenCalledWith(expect.objectContaining({ summary: 'mic audio, 6.00 s' }));
+  expect(s.finish).toHaveBeenCalledTimes(1);
+  s.mic.cancel();
+});
+
+it('ignores an extra tap during transcription instead of discarding the recorded question', async () => {
+  const s = setup();
+  await s.mic.start();
+  s.samples(new Float32Array(4800));
+  s.mic.toggle();
+  s.mic.toggle();
+  expect(s.capture).toHaveBeenCalledTimes(1);
+  expect(s.cancel).not.toHaveBeenCalled();
+  s.callbacks().onTranscript('What does this sign mean?');
+  s.callbacks().onComplete();
+  expect(s.queries).toHaveBeenCalledWith(
+    expect.objectContaining({ transcript: 'What does this sign mean?' }),
+  );
+});
+
+it('bounds buffered audio to the permitted recording window without dropping its beginning', async () => {
+  const s = setup();
+  let connect!: (handle: InkHandle) => void;
+  s.ink.mockImplementationOnce(async () => new Promise<InkHandle>((r) => (connect = r)));
+  const pending = s.mic.start();
+  await settle();
+  for (let i = 0; i < 35; i++) s.samples(new Float32Array(48000).fill(i / 100));
+  expect(s.stop).toHaveBeenCalledTimes(1);
+  connect({ send: s.send, finish: s.finish, cancel: s.cancel });
+  await pending;
+  expect(s.send).toHaveBeenCalledTimes(MAX_LISTEN_MS / 1000);
+  expect(s.send.mock.calls[0]?.[0]).toEqual(new Float32Array(48000));
+  expect(s.sent).toHaveBeenCalledWith(expect.objectContaining({ summary: 'mic audio, 30.00 s' }));
+  s.mic.cancel();
+});

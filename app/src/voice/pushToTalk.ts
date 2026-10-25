@@ -12,8 +12,7 @@ import { openInk, type InkSession } from './ink.ts';
 export type MicStatus = 'idle' | 'connecting' | 'listening' | 'transcribing' | 'error';
 
 export const MAX_LISTEN_MS = 30_000;
-// Cap on audio held back while Ink connects; older audio is dropped first.
-const MAX_BUFFERED_S = 3;
+// Keep the whole permitted utterance while Ink connects, bounded by MAX_LISTEN_MS.
 
 export function createPushToTalk(options: {
   bus: Bus;
@@ -56,6 +55,8 @@ export function createPushToTalk(options: {
     session.listening = false;
     clearTimer(session.timer);
     session.capture?.stop();
+    session.pending = [];
+    session.pendingSamples = 0;
     report(session);
     session.controller.abort();
     session.ink?.cancel();
@@ -119,11 +120,14 @@ export function createPushToTalk(options: {
           options.status('listening');
         }
         if (!session.ink) {
-          session.pending.push(samples);
-          session.pendingSamples += samples.length;
-          const max = MAX_BUFFERED_S * (session.capture?.sampleRate ?? 48000);
-          while (session.pendingSamples > max && session.pending.length > 1)
-            session.pendingSamples -= session.pending.shift()!.length;
+          const max = (MAX_LISTEN_MS / 1000) * (session.capture?.sampleRate ?? 48000);
+          const remaining = Math.max(0, max - session.pendingSamples);
+          if (remaining > 0) {
+            const chunk = samples.length <= remaining ? samples : samples.slice(0, remaining);
+            session.pending.push(chunk);
+            session.pendingSamples += chunk.length;
+          }
+          if (session.pendingSamples >= max && session.capture) finish(session);
           return;
         }
         try {
@@ -188,7 +192,7 @@ export function createPushToTalk(options: {
     toggle() {
       const session = current;
       if (session?.listening) finish(session);
-      else void start();
+      else if (!session) void start();
     },
     start,
     finish() {
