@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBus } from '../bus.ts';
 import type { EventName, Events, ModuleContext } from '../types.ts';
+import { createMockVision } from './vision.ts';
 import { mockFactories } from './index.ts';
 
 afterEach(() => vi.useRealTimers());
@@ -26,7 +27,9 @@ describe('mock modules', () => {
 
     const seen: Array<[EventName, unknown]> = [];
     bus.onAny((type, payload) => seen.push([type, payload]));
-    const all = Object.values(mockFactories).map((make) => make());
+    const all = Object.entries(mockFactories).map(([name, make]) =>
+      name === 'vision' ? createMockVision({ legacy: true }) : make(),
+    );
     await Promise.all(all.map((m) => m.start(ctx)));
 
     nowMs = 3100;

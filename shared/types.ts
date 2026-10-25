@@ -1,3 +1,4 @@
+import type { CvScene } from './cvScene.ts';
 // FROZEN CONTRACT (docs/DESIGN.md, "Shared contracts"). Every event, fixture format and module
 // interface lives here. Only Rohit edits this file, and only with team approval.
 
@@ -40,9 +41,18 @@ export type WebcamAlert = {
 export type DeliveryEmotion = 'calm' | 'confident' | 'content' | 'sympathetic';
 export type Delivery = { emotion: DeliveryEmotion; pace: 'normal' | 'slower' };
 
+export type VisionAdvice = {
+  id: string;
+  text: string;
+  reason: string;
+  tripMs: number;
+  expiresMs: number;
+};
+
 export type SpeakRequest = {
   id: string;
-  sourceId: string; // the MapCue/WebcamAlert id, for the timeline
+  sourceId: string; // observation id, for the timeline
+  origin?: 'vision'; // validated generated coaching, streamed through Sonic
   text: string; // always present: shown as a caption
   clipKey?: string; // play a bundled clip instead of streaming
   fallbackClipKey?: string; // bundled clip to play if streaming fails or is slow
@@ -60,7 +70,7 @@ export type ArbiterDecision = {
 };
 
 export type DataSent = {
-  destination: 'cartesia-tts' | 'cartesia-stt' | 'claude';
+  destination: 'cartesia-tts' | 'cartesia-stt' | 'claude' | 'anthropic-vision';
   summary: string; // e.g. 'text: "Stop sign ahead..."', 'mic audio, 2.1 s' or 'question: "..."'
   tripMs: number;
 };
@@ -97,7 +107,9 @@ export type CueWording = { featureId: string; text: string; delivery?: Delivery 
 export type Events = {
   position: Position; // Jeev
   mapCue: MapCue; // Jeev
-  webcamAlert: WebcamAlert; // Tejas
+  visionScene: CvScene; // vision: tentative local observations, cleared on tripReset
+  visionAdvice: VisionAdvice; // vision (VLM coaching)
+  webcamAlert: WebcamAlert; // legacy local detector / mock
   cameraHealth: { ok: boolean; reason?: string }; // Tejas
   speak: SpeakRequest; // Rohit
   arbiterDecision: ArbiterDecision; // Rohit

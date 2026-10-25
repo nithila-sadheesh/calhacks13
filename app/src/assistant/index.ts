@@ -115,6 +115,18 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
       }
 
       const offs = [
+        bus.on('visionScene', (scene) => {
+          memory.localScene = scene;
+        }),
+        bus.on('tripState', ({ state }) => {
+          if (state !== 'playing') memory.localScene = undefined;
+          if (state === 'ended' || state === 'idle') {
+            controller.abort();
+            controller = new AbortController();
+            memory = emptyMemory();
+            requested.clear();
+          }
+        }),
         bus.on('position', (p) => {
           memory.speedMps = p.speedMps;
         }),

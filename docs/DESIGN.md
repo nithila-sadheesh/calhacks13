@@ -1,5 +1,63 @@
 # Learner Co-Pilot: Build Design Doc
 
+## Reconciled UI, conversation and hybrid vision
+
+The reconciled branch uses `tejas/ui-overhaul` as the application base and incorporates hybrid vision from `nithila/voice-setup`. Both replay and live camera/GPS remain available. Route reminders, tap-to-talk, the driving UI, Claude-selected delivery and the Vercel assistant endpoint are preserved. The production observation path is local EfficientDet/tracking → bounded scene JSON → `/api/vision-advice` → `visionAdvice` → arbiter → Sonic. No production video pixels leave the device.
+
+Vision additionally publishes `visionScene` (only vision publishes it). The assistant subscribes through the bus and includes a scene with a spoken question only while it is at most three seconds old. The server validates and strips scene fields; its prompt treats boxes, IDs and image trends as tentative evidence, never distance, speed, intent, controls or right-of-way. Scene context clears on pause, end and reset. Conversation retains the UI branch's trip-summary context; full conversational turn history is not implemented.
+
+The shared contract retains both vision and assistant events, both Anthropic data-use destinations, and voice delivery settings. Generated vision speech keeps its stricter coaching validation through server, client, arbiter and voice. Requested answers rank ahead of queued ordinary coaching without interrupting active speech; new vision coaching replaces only older queued vision coaching, preserving route reminders and answers. Mute suppresses unsolicited reminders while requested answers remain available. The local periodic fallback reminders remain enabled as on the source vision branch. Legacy priority-zero alerts remain diagnostic/mock behavior, not an extra production detector pipeline.
+
+Both `/api/assistant` and `/api/vision-advice` are configured for Vercel; server imports use compilation-compatible `.js` specifiers. Privacy disclosures cover object descriptions, transcribed questions and trip summaries sent to Anthropic, speech text/audio sent to Cartesia, and local GPS use without coordinate uploads. The original source branches and GitHub `integration` are not deployment targets of this reconciliation.
+
+
+Reconciliation validation: `npm run typecheck`, `npm run lint`, `npm test` (369 passed, 2 opt-in tests skipped), `npm run build`, and Chrome end-to-end checks (14 passed, 3 live-provider tests skipped) pass. Browser checks exercise real local model assets and the recording, fake-camera/GPS live startup/end/restart, mocked provider coaching through the real arbiter, reset behavior, and desktop/390-pixel phone layout. Live Anthropic/Cartesia calls, physical microphone/speaker playback, iPhone hardware and production Vercel deployment were not verified in this reconciliation.
+
+## Current approved revision: local CV with language coaching
+
+**Production flow:** recorded video → local EfficientDet-Lite0 and IoU tracker → compact scene JSON → Claude chooses coaching → arbiter → Sonic. It reuses existing components rather than adding OCR, depth models, lane networks or an agent framework.
+
+- The detector is warmed on a blank canvas before playback; its output is discarded. During replay it samples distinct trip times at a target interval of 125 ms and downsizes video locally. CPU load and decoding can reduce actual throughput. No frame pixels are submitted by the default module.
+- Objects must be observed repeatedly and exceed a starting score floor of 0.45. Output contains tentative IDs, classes, detector confidence, coarse image-side/zone, lateral IMAGE displacement, apparent-size trend and observed duration. These are not physical distances, speeds, stopped states or arrival order. IDs are not verified identities across cuts.
+- Supported classes: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Detecting one sign does not establish an all-way stop or the approach it controls; a light detection never supplies a color. Speed-sign OCR, lanes, intended maneuver and metric proximity are not implemented.
+- Changed coarse scenes trigger Claude at most once per three seconds with one request in flight; unchanged nonempty scenes refresh after five seconds. Empty scenes do not force model calls. Up to three prior detector snapshots and four bounded model observation entries provide context. Mute/repeat, freshness, duplicate handling and replay resets remain unchanged.
+- `/api/vision-advice` accepts bounded `scene`/`previousScenes` JSON as the active input. It explicitly tells Claude no image is present and forbids inventing missing road context from the teaching examples. Image input is retained only for explicit legacy diagnostics; frame and CV payloads cannot be mixed.
+- UI shows CV boxes/counts/frame latency immediately while Claude selects a message or silence. Privacy: frames stay on device; object descriptions and prior textual observations go to Anthropic; reminder text/held mic audio go to Cartesia; GPS coordinates are not sent.
+- Validation includes local observations → real arbiter/voice transport, CV lifecycle/reset, JSON-only server requests, browser video/model execution and optional live provider checks. Actual latency/quality must be measured; text-only input loses visual context that Claude previously supplied.
+
+The VLM revision below is historical wherever it conflicts with this active hybrid revision.
+
+## Approved revision: video-language coaching
+
+This section is the current architecture, approved by the user during integration. It supersedes conflicting local-only detection, fixed-phrase-only and no-LLM requirements in the original v2 blueprint retained below for history.
+
+**Primary flow:** recorded video → 2–3 resized JPEG frames → server-side Claude Sonnet → validated JSON → `visionAdvice` → arbiter → Sonic → captions/timeline. Map remains context; map speech is optional (`?mapSpeech=1`) and advisory. This is supervised replay coaching, not immediate vehicle control.
+
+- `app/src/vision/index.ts` samples the first pair about 250 ms apart, then once per second; starts analysis after two frames; keeps the latest three; waits at least three seconds between request starts; allows one request in flight.
+- `/api/vision-advice` delegates to `server/visionAdvice.ts`. `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL` stay server-side. Default model is `claude-sonnet-5-5`. Native fetch is used; no SDK dependency.
+- The server owns the coaching prompt and JSON schema: `{ shouldSpeak: boolean, message: string, reason: string }`. False means an empty message and no speech. Prompt requests one concise, evidence-grounded observation/reminder, preferably 6–12 words. Shared validation caps speech at 180 characters, rejects malformed responses and obvious prohibited claims. Validation cannot guarantee perception or coaching correctness.
+- Requests carry only 2–3 JPEG frames, replay timestamps and up to three recent suggestions for repetition control. No map coordinates, microphone audio or client-supplied prompt/model/key. Request body ≤800 KB, each base64 frame ≤240 KB. Per-warm-instance limit: 30 requests/minute; not distributed authentication or quota enforcement.
+- Server timeout: 12 seconds; browser timeout: 13 seconds. Pause, seek, reset, trip end and disposal cancel analysis and invalidate responses. Results over eight seconds old in trip time are discarded. Advice expires ten seconds after its latest frame. These are starting values, not latency guarantees.
+- `VisionAdvice = { id, text, reason, tripMs, expiresMs }`. Only vision publishes it. `SpeakRequest.origin?: 'vision'` identifies validated generated text. Only arbiter publishes `speak`; voice validates and streams generated text. Video coaching has priority 1, optional map cues priority 2; legacy bundled warnings retain priority 0. New video suggestions replace queued older video/map suggestions without interrupting current ordinary speech. Repeat applies to the latest spoken coaching or route reminder.
+- Exact normalized repeated suggestions are suppressed for 20 seconds; the prompt also receives recent suggestions. This is not semantic duplicate detection. Silence is valid. Failures surface in analysis status without fabricated advice or dummy clips.
+- Privacy statement: sampled video frames are sent to Anthropic Claude; reminder text is sent to Cartesia Sonic; microphone audio is sent to Cartesia Ink only while push-to-talk is held; GPS coordinates are not sent, but visible locations may be recognizable in video frames. Browser setup and data-use UI must say this.
+- UI replaces detection boxes with collecting/analyzing/result/error status, observation, latest advice, analyzed frame time and response latency. The event timeline includes video advice and speech latency.
+- MediaPipe code remains available for legacy diagnostics/regression tests only; it does not run in the default app. It is not a second runtime inference pipeline.
+
+**Acceptance:** captured real frames reach the server; malformed/refused/failed responses never speak; valid JSON reaches real arbiter and Sonic transport; no overlapping requests/audio; pause/seek clears stale output; captions match generated speech; keys stay out of client assets; data-use disclosure shows Anthropic uploads. Verify live speaker/mic behavior manually in Chrome. Model latency must be measured, never assumed.
+
+**Measured spike:** one live request with three actual recorded frames returned HTTP 200 and validated coaching JSON in approximately 4.4 seconds. This is one response, not a latency benchmark or safety evaluation. Production deployment and full live-audio acceptance remain pending.
+
+### Instructor guidance revision
+
+The server prompt now lives in `server/coachingPrompt.ts` and includes an extended teaching library and ten written scenarios. See `docs/COACHING_GUIDE.md`. Production JSON additionally requires `observations`, `uncertainties`, `coachingPoint` and `sceneChanged`. Older minimal responses remain accepted only for backward-compatible test doubles on the client.
+
+Frame history is bounded to 20 seconds; requests select one earlier anchor and two recent frames. Up to four prior model observation/uncertainty entries within 20 seconds provide scene context. They are explicitly unverified, cannot establish continuous tracking/arrival order, and clear on reported cuts or replay lifecycle changes. No extra frames or GPS coordinates are uploaded beyond the three-frame limit. The maximum response budget is now 700 tokens for the richer schema.
+
+The optional server `COACHING_JURISDICTION` defaults to unknown. Conditional California examples do not authorize local-law assumptions about unrelated footage. Current prompt/memory improvements are not fine-tuning or proof of instructor competence; source references and testing limits are documented in the coaching guide.
+
+## Original v2 blueprint (historical where superseded)
+
 ## Summary
 
 **Pitch:** a voice-first practice-driving companion. It uses the route ahead and an on-device camera to give a few timely, conservative coaching reminders, spoken by Cartesia Sonic, then helps the learner review the drive. Working name: Learner Co-Pilot.

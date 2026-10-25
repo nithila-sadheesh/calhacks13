@@ -1,3 +1,4 @@
+import { validCoachingText } from '../../../shared/coaching.ts';
 import type { Bus, SpeakRequest, TripClock } from '../../../shared/types.ts';
 import { isSafeToSpeak } from '../../../shared/safeWording.ts';
 import { approvedText, CLIP_TEXT, fallbackKey, type ClipKey } from './config.ts';
@@ -129,7 +130,9 @@ export function createVoiceEngine(options: {
     speak(request: SpeakRequest) {
       if (stopped) return;
       if (
-        !(approvedText(request.text) || isSafeToSpeak(request.text)) ||
+        !(request.origin === 'vision'
+          ? validCoachingText(request.text)
+          : approvedText(request.text) || isSafeToSpeak(request.text)) ||
         !player.ready() ||
         (request.expiresMs !== undefined && clock.nowMs() > request.expiresMs)
       ) {

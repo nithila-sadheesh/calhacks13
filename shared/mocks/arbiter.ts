@@ -9,6 +9,24 @@ export function createMockArbiter(): AppModule {
     name: 'arbiter',
     async start({ bus, clock }) {
       offs.push(
+        bus.on('visionAdvice', (advice) => {
+          const id = `speak-${advice.id}`;
+          bus.emit('speak', {
+            id,
+            sourceId: advice.id,
+            text: advice.text,
+            origin: 'vision',
+            priority: 1,
+            expiresMs: advice.expiresMs,
+          });
+          bus.emit('arbiterDecision', {
+            sourceId: advice.id,
+            action: 'spoken',
+            reason: advice.reason,
+            tripMs: clock.nowMs(),
+            speakId: id,
+          });
+        }),
         bus.on('mapCue', (cue) => {
           bus.emit('speak', {
             id: `speak-${cue.id}`,

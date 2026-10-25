@@ -21,7 +21,7 @@ async function startLive(page: Page, mocks: string) {
     if (m.type() === 'error') problems.push(m.text());
   });
   page.on('pageerror', (e) => problems.push(e.message));
-  await page.goto(mocks ? `/?mock=${mocks}` : '/');
+  await page.goto(mocks ? `/?mock=${mocks},assistant` : '/');
   await page.getByRole('checkbox', { name: 'A licensed adult is in the passenger seat.' }).check();
   await page.getByRole('button', { name: 'Start live drive' }).click();
   await page.getByRole('button', { name: 'Start drive' }).click({ timeout: 20_000 });
@@ -29,7 +29,7 @@ async function startLive(page: Page, mocks: string) {
   return { problems, logs };
 }
 
-test('live: camera starts, cue then alert interrupting it, end stops the camera', async ({
+test('live: camera starts, route and vision coaching play, end stops the camera', async ({
   page,
 }) => {
   const { problems } = await startLive(page, 'map,vision,voice');
@@ -37,13 +37,13 @@ test('live: camera starts, cue then alert interrupting it, end stops the camera'
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.srcObject !== null)).toBe(true);
   expect(await video(page).evaluate((v: HTMLVideoElement) => v.controls)).toBe(false);
 
-  const captions = page.locator('.captions');
+  await page.locator('.timeline-collapse > summary').click();
+  const captions = page.locator('.captions p');
   await expect(captions).toHaveText('Stop sign ahead. Prepare for a complete stop.', {
     timeout: 6000,
   });
-  await expect(captions).toHaveText('Pedestrian ahead. Stay alert.', { timeout: 4000 });
-  const stopRow = page.locator('.timeline-row', { hasText: 'Stop sign' });
-  await expect(stopRow.locator('.step-interrupted')).toContainText('preempted by alert');
+  await expect(captions).toHaveText('Scan curb edges for pedestrians.', { timeout: 7000 });
+  await expect(page.locator('.timeline-row', { hasText: 'Video coaching' })).toBeVisible();
 
   await page.getByRole('button', { name: 'End drive' }).click();
   await expect(page.getByRole('button', { name: 'Start drive' })).toBeVisible();
@@ -53,6 +53,7 @@ test('live: camera starts, cue then alert interrupting it, end stops the camera'
 
 test('live: a second drive starts from a clean slate', async ({ page }) => {
   await startLive(page, 'map,vision,voice');
+  await page.locator('.timeline-collapse > summary').click();
   const timeline = page.locator('.timeline-row');
   await expect(timeline.first()).toBeVisible({ timeout: 6000 });
   await page.getByRole('button', { name: 'End drive' }).click();

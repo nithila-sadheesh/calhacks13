@@ -3,7 +3,8 @@
 // timing still comes only from ctx.clock.nowMs() (AGENTS.md rule 5).
 
 // COCO classes we keep (detector allowlist). EfficientDet-Lite0 uses COCO label names.
-export const DETECTOR_CLASSES = ['person', 'bicycle', 'car', 'truck', 'bus', 'motorcycle'] as const;
+import { SCENE_CLASSES } from '../../../shared/cvScene.ts';
+export const DETECTOR_CLASSES = SCENE_CLASSES;
 export type DetectorClass = (typeof DETECTOR_CLASSES)[number];
 export const VEHICLE_CLASSES: readonly DetectorClass[] = ['car', 'truck', 'bus', 'motorcycle'];
 
@@ -15,7 +16,7 @@ export const FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
 // Detector. A low score floor lets the tracker see weak boxes; the alert rules apply the real
 // 0.6 pedestrian threshold on top.
 export const SCORE_THRESHOLD = 0.4;
-export const MAX_RESULTS = 10;
+export const MAX_RESULTS = 20;
 
 // Primary alert: pedestrianNearby. A person at >= 0.6 confidence, inside the forward region,
 // seen in at least 4 of the last 5 processed frames.

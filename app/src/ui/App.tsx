@@ -29,7 +29,8 @@ export function App({ bus, modules }: AppProps) {
           </li>
           <li>
             Your spoken questions and a short trip summary (recent reminders, upcoming streets,
-            speed) are sent to Claude. Never video or GPS coordinates.
+            speed), plus local object descriptions, are sent to Claude. Never video frames or GPS
+            coordinates.
           </li>
           <li>Location is used on this device to time route reminders and is never sent.</li>
         </ul>
@@ -53,8 +54,9 @@ export function App({ bus, modules }: AppProps) {
         </button>
       </div>
       <p className="muted">
-        Live uses this device&apos;s rear camera to spot pedestrians and its location to time route
-        reminders. The microphone records only between your two taps of the talk button.
+        Live uses this device&apos;s rear camera for local object detection and Claude coaching and
+        its location to time route reminders. The microphone records only between your two taps of
+        the talk button.
       </p>
     </main>
   );

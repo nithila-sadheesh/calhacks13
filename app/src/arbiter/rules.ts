@@ -1,6 +1,7 @@
 // The arbiter's rules as one pure function: step(state, input, nowMs) returns the next state and
 // the events to emit. No bus, no clock, no timers, so every rule in docs/DESIGN.md is unit-tested
 // in rules.test.ts. The arbiter decides only when something is heard, never what is safe.
+import { validCoachingText } from '../../../shared/coaching.ts';
 import type {
   ArbiterDecision,
   AssistantReply,
@@ -10,6 +11,7 @@ import type {
   MapFeatureKind,
   SpeakRequest,
   WebcamAlert,
+  VisionAdvice,
 } from '../../../shared/types.ts';
 
 export const SPACING_MS = 4000; // gap after any line before a fresh route cue or advisory
@@ -38,7 +40,8 @@ const FALLBACK_CLIPS: Partial<Record<MapFeatureKind, string>> = {
 };
 
 export type Item = {
-  origin: 'cue' | 'alert' | 'repeat' | 'system' | 'answer';
+  origin: 'cue' | 'alert' | 'repeat' | 'system' | 'answer' | 'vision';
+  generated?: boolean;
   sourceId: string;
   dedupeKey?: string; // never spoken twice per trip; repeats and replays bypass it
   alertKind?: WebcamAlert['kind'];
@@ -73,6 +76,7 @@ export type ArbiterState = {
 export type Input =
   | { type: 'cue'; cue: MapCue }
   | { type: 'alert'; alert: WebcamAlert }
+  | { type: 'advice'; advice: VisionAdvice }
   | { type: 'speechEnded'; id: string }
   | { type: 'voice'; kind: 'repeat' | 'mute' | 'unmute' }
   | { type: 'answer'; reply: AssistantReply }
@@ -171,6 +175,42 @@ export function step(
     case 'answer':
       onAnswer(run, input.reply);
       break;
+    case 'advice': {
+      const advice = input.advice;
+      if (nowMs > advice.expiresMs || !validCoachingText(advice.text)) {
+        decide(
+          run,
+          advice.id,
+          'dropped',
+          nowMs > advice.expiresMs ? 'expired' : 'invalid coaching',
+        );
+        break;
+      }
+      if (advice.id.startsWith('vision-fallback-') && (s.current || s.queue.length > 0)) {
+        decide(run, advice.id, 'dropped', 'periodic reminder deferred while speech is busy');
+        break;
+      }
+      // Replace stale queued vision coaching while preserving route reminders and answers.
+      s.queue = s.queue.filter((item) => {
+        if (item.origin !== 'vision') return true;
+        decide(run, item.sourceId, 'dropped', 'superseded by newer video coaching');
+        return false;
+      });
+      offer(run, {
+        origin: 'vision',
+        generated: true,
+        sourceId: advice.id,
+        dedupeKey: `advice:${advice.id}`,
+        text: advice.text,
+        priority: 1,
+        earliestMs: advice.tripMs,
+        expiresMs: advice.expiresMs,
+        gapMs: 1000,
+        why: advice.reason,
+        replayed: false,
+      });
+      break;
+    }
     case 'alert':
       offer(run, alertItem(input.alert));
       break;
@@ -339,6 +379,11 @@ function onVoice(run: Run, kind: 'repeat' | 'mute' | 'unmute') {
 function onAnswer(run: Run, reply: AssistantReply) {
   if (reply.action) onVoice(run, reply.action);
   if (!reply.text || reply.action === 'repeat') return;
+  run.s.queue = run.s.queue.filter((item) => {
+    if (item.origin !== 'vision') return true;
+    decide(run, item.sourceId, 'dropped', 'superseded by requested answer');
+    return false;
+  });
   const item: Item = {
     origin: 'answer',
     sourceId: reply.id,
@@ -389,7 +434,12 @@ function pump(run: Run) {
   });
   const next = s.queue
     .filter((i) => readyAt(s, i) <= nowMs)
-    .sort((a, b) => a.priority - b.priority || a.earliestMs - b.earliestMs)[0];
+    .sort(
+      (a, b) =>
+        a.priority - b.priority ||
+        Number(b.origin === 'answer') - Number(a.origin === 'answer') ||
+        a.earliestMs - b.earliestMs,
+    )[0];
   if (!next) return;
   s.queue = s.queue.filter((i) => i !== next);
   speak(run, next);
@@ -402,7 +452,12 @@ function speak(run: Run, item: Item) {
   s.current = { item, speakId, startedMs: nowMs };
   if (item.dedupeKey) s.spokenKeys.add(item.dedupeKey);
   if (item.alertKind) s.lastAlertMs = { ...s.lastAlertMs, [item.alertKind]: nowMs };
-  if (item.origin === 'cue' || item.origin === 'answer' || item.origin === 'system')
+  if (
+    item.origin === 'cue' ||
+    item.origin === 'answer' ||
+    item.origin === 'system' ||
+    item.origin === 'vision'
+  )
     s.lastLine = item;
 
   const request: SpeakRequest = {
@@ -412,6 +467,7 @@ function speak(run: Run, item: Item) {
     priority: item.priority,
     expiresMs: item.expiresMs,
   };
+  if (item.generated) request.origin = 'vision';
   if (item.clipKey) request.clipKey = item.clipKey;
   if (item.fallbackClipKey) request.fallbackClipKey = item.fallbackClipKey;
   if (item.delivery) request.delivery = item.delivery;

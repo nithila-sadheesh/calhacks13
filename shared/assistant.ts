@@ -1,9 +1,11 @@
+import { parseCvScene, type CvScene } from './cvScene.js';
 // Wire format between the browser's assistant module and POST /api/assistant. The browser sends a
 // short trip summary: what was said, recent alerts, upcoming features by street and distance, and
 // speed. Never video, images or GPS coordinates (AGENTS.md section 3 rule 9).
 import type { Delivery, DeliveryEmotion, MapFeatureKind } from './types.ts';
 
 export type TripContext = {
+  localScene?: CvScene; // tentative image observations; never measured road geometry
   speedMps?: number;
   muted: boolean;
   recentLines: Array<{ agoS: number; text: string }>;
@@ -70,6 +72,11 @@ function parseContext(v: unknown): TripContext | undefined {
       return [street ? { kind: k, street, distM } : { kind: k, distM }];
     }),
   };
+  if (v.localScene !== undefined) {
+    const scene = parseCvScene(v.localScene);
+    if (!scene) return undefined;
+    context.localScene = scene;
+  }
   const speed = num(v.speedMps);
   if (speed !== undefined) context.speedMps = speed;
   return context;

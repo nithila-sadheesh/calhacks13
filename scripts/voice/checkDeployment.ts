@@ -34,14 +34,16 @@ check(
   assets.some((name) => name.startsWith('captureWorklet-') && name.endsWith('.js')),
   'AudioWorklet is included in the production build',
 );
-const key = process.env.CARTESIA_API_KEY;
-if (key) {
-  let exposed = false;
-  for (const name of assets) {
-    if ((await readFile(`dist/assets/${name}`, 'utf8')).includes(key)) exposed = true;
-  }
-  check(!exposed, 'Configured API key is absent from client assets');
-} else check(false, 'Load .env with --env-file=.env to check client assets for the configured key');
+for (const name of ['CARTESIA_API_KEY', 'ANTHROPIC_API_KEY']) {
+  const key = process.env[name];
+  if (key) {
+    let exposed = false;
+    for (const asset of assets) {
+      if ((await readFile(`dist/assets/${asset}`, 'utf8')).includes(key)) exposed = true;
+    }
+    check(!exposed, `${name} is absent from client assets`);
+  } else check(false, `Load ${name} server-side to verify absence from client assets`);
+}
 const config: unknown = JSON.parse(await readFile('vercel.json', 'utf8'));
 check(
   Boolean(config && typeof config === 'object' && 'functions' in config),

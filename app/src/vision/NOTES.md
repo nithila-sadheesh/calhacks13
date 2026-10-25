@@ -1,110 +1,32 @@
-# Vision module notes (Tejas)
+# Vision: local CV and Claude coaching
 
-Spike and implementation notes for `app/src/vision/`. See `docs/DESIGN.md`, "Tejas: vision and
-overlay" for the plan, and `AGENTS.md` for the shared rules.
+Default production flow: local EfficientDet-Lite0 → IoU tracking → compact scene JSON → Claude teaching prompt → `visionAdvice` → arbiter → Sonic. Frames stay local; object descriptions and textual context go to Anthropic.
 
-## What it does
+- `index.ts`: target 8 fps, one detector runtime, lifecycle cleanup; event-driven model requests with a three-second minimum and five-second unchanged-scene refresh, one request in flight.
+- `detector.ts`: existing local model/WASM, GPU with creation-time CPU fallback, local downscaling and blank-canvas warmup before playback. Warmup creates no road observation.
+- `tracker.ts`: tentative IoU IDs. `cvScene.ts`: repeated observations at score >=0.45, coarse image geometry/motion; no calibrated distance, speed, parking state, lanes or arrival order.
+- `shared/cvScene.ts` / `shared/coaching.ts`: bounded, validated CV JSON and model results; scene and image payloads cannot be mixed.
+- `coachingStore.ts` / `VisionOverlay.tsx`: live local boxes/counts/latency plus coaching/evidence. CV keeps updating while Claude waits.
+- `server/visionAdvice.ts` / `coachingPrompt.ts`: text-only requests by default, explicit unknowns, authored instructor scenarios and conservative response validation.
 
-Runs the MediaPipe Tasks Vision object detector (EfficientDet-Lite0) in video mode on frames of
-the shared `<video>`, tracks boxes across frames, and raises a conservative `webcamAlert` only
-from accumulated real detections. Also reports `cameraHealth`. Nothing is scripted from a
-timestamp (AGENTS.md rule 6); alert timing comes only from `ctx.clock.nowMs()`.
+`frameRuntime.ts` preserves the previous image-upload implementation for comparison/regression tests. `localRuntime.ts` preserves the original fixed-warning implementation. Neither is imported by the production entry point. The shared detector/tracker remain reused, not duplicated as simultaneously active pipelines.
 
-## Files
+Only basic object classes are supplied: person, bicycle, car, truck, bus, motorcycle, stop sign, traffic light. Signs/lights have no OCR/color/applicability interpretation. Image motion may be ego motion; growing boxes are not physical proximity. Track IDs and model memory cannot prove who arrived first. The prompt must not fill these gaps with handbook knowledge.
 
-| File | Role | Browser? |
-| --- | --- | --- |
-| `config.ts` | Every tunable number (thresholds, forward region, cooldowns, clip keys) | no |
-| `geometry.ts` | Pure box math: IoU, bottom-center, forward-region test, smoothing | no |
-| `tracker.ts` | IoU association + EMA smoothing + stable ids | no |
-| `alerts.ts` | Alert state machine: pedestrian 4-of-5, following-distance, cooldown, expiry | no |
-| `detector.ts` | MediaPipe loader + detection → normalized boxes | yes |
-| `store.ts` | In-module pub/sub the frame loop writes and the overlay reads | no |
-| `index.ts` | The `AppModule`: frame loop, wiring, health watchdog, reset | yes |
-| `VisionOverlay.tsx` | Canvas overlay: boxes, region, alert highlight, reason, health badge | yes |
-| `*.test.ts` | Vitest for every pure decision function | — |
+See `docs/KNOWN_GAPS.md` for measured latency, current short-video limits and test status; `docs/COACHING_GUIDE.md` for the teaching library and uncertainty requirements. Holdout/instructor review remains pending.
 
-Decision logic is pure and unit-tested (`geometry`, `tracker`, `alerts`); the browser files
-(`detector`, `index`, `VisionOverlay`) are thin wiring around it.
+### Coaching sensitivity and perception update
 
-## Model and wasm: vendored, offline, in-browser
+The coaching policy now permits specific preparatory cues from repeated detections without requiring a visible conflict. Duplicate advice remains suppressed. Signs/signals enter scene summaries at 0.40 confidence after repeated observations; other classes retain 0.45. Added COCO dog, cat and train labels, and increased detector candidates to 20 (scene payload still capped at 10). This is broader coverage, not a measured accuracy improvement.
 
-- Detector: **EfficientDet-Lite0**, COCO labels, allow-listed to
-  `person, bicycle, car, truck, bus, motorcycle`.
-- The model file `assets/efficientdet_lite0.tflite` (float16, ~7 MB) is committed in this folder,
-  downloaded once from
-  `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`.
-- The MediaPipe wasm runtime is the one in `node_modules/@mediapipe/tasks-vision@1.1.1/wasm`,
-  imported through Vite with `?url` (`vision_wasm_internal.js` + `vision_wasm_internal.wasm`).
-  `WasmFileset` is just `{ wasmLoaderPath, wasmBinaryPath }`, so we build it from those URLs
-  instead of pointing `FilesetResolver.forVisionTasks()` at a CDN.
-- **Net effect:** the detector loads from local assets with no network call, and video frames are
-  processed entirely in the browser. This is what backs the privacy claim "Video: stays on this
-  device" (AGENTS.md rule 9). The production build bundles the model and wasm as static assets.
+Every fourth inference adds one alternating left/right crop covering half the image width and the upper three quarters. Only sign/signal detections from crops are retained, mapped back to full-frame coordinates and deduplicated by same-class IoU. Crop calls use strictly increasing private model timestamps and preserve aspect ratio. This costs an extra inference on one quarter of frames. No additional model or dependency is downloaded.
 
-If the wasm/model ever need to move out of the bundle (size), the clean option is to serve them
-from the public dir — that needs Rohit (he owns `vite.config.ts` and the public dir). Not needed
-now; the local-asset path works and keeps everything in Tejas's folder.
+Scene objects optionally carry normalized imageBox x/y/w/h through the validated server contract. These support image-relative comparisons, not physical distance, road placement, collision prediction or signal interpretation. Existing callers without boxes remain compatible. Claude is prompted for one practical 8–12-word sentence with matching CV-only examples. Prompt targets are not a guarantee of recommendation quality; test against labeled road footage before drawing accuracy conclusions. Small signs, sign applicability, camera cuts and object identities remain limitations. Sonic streaming requests use speed guidance 1.15; bundled fallback audio is unchanged.
 
-## Alert rules (from the design doc)
+### Request diagnostics
 
-- **pedestrianNearby (primary):** a `person` at confidence ≥ 0.6 whose box bottom-center is inside
-  the forward region, present in ≥ 4 of the last 5 processed frames. Text: "Pedestrian ahead.
-  Stay alert." Never "crossing". `clipKey: 'pedestrianNearby'`.
-- **followingDistance (fallback, off by default):** a vehicle filling ≥ 35 % of the frame width
-  inside the forward region for 2 s while speed > 5 m/s. Text: "Leave more space ahead."
-  `clipKey: 'followingDistance'`. Turn on only if the pedestrian alert proves unreliable on our
-  footage, by flipping `ENABLE_FOLLOWING_DISTANCE` in `config.ts`.
-- **Debounce/expiry:** 8 s cooldown per kind; `expiresMs = detection trip time + 1.5 s`. Tracker,
-  cooldowns and alert state all clear on `tripReset`.
+The overlay includes an expandable Coaching request diagnostics panel. It retains up to 30 local records containing submitted object snapshots, validated model responses, latency and disposition (silence, duplicate suppression, sent to arbiter, stale, cancelled or error). Records survive pause/end and clear on tripReset or module stop. No additional network requests are made. Cancelled requests may have no model response because the existing lifecycle aborts them. A sent-to-arbiter disposition does not prove audio played. Invalid responses are recorded as validation errors; raw invalid provider output is not displayed.
 
-## Forward region
+### Periodic replay reminders
 
-Fixed lower-center trapezoid in normalized `[0,1]` frame coordinates (`FORWARD_REGION` in
-`config.ts`): top edge y=0.55 spanning x 0.34–0.66, bottom edge y=1.0 spanning x 0.12–0.88.
-Assumes a landscape mount, low and centered. Tune against the demo footage and record the final
-numbers here.
-
-## Camera health
-
-A 500 ms watchdog. While the video is playing, if no successful inference lands for over 2 s
-(`STALL_MS`), or the video is unavailable (`readyState < 2` / `videoWidth === 0`), it emits
-`cameraHealth { ok: false }` and the overlay shows "Camera paused. Route reminders only." It emits
-`{ ok: true }` again on recovery. Transitions are deduplicated so the bus sees one event per
-change. Pausing the video is not a stall (the watchdog only counts time while playing).
-
-## Clip keys — message for Nithila
-
-`webcamAlert.clipKey` is `'pedestrianNearby'` for the pedestrian alert and `'followingDistance'` for the
-fallback. These must exist in `fixtures/audio/manifest.json`. `'pedestrianNearby'` already matches the
-vision mock. If Nithila's keys differ, change `CLIP_KEYS` in `config.ts` (one place) — do not
-change the contract.
-
-## Timestamps and the clock
-
-- Alert `tripMs`/`expiresMs` use `ctx.clock.nowMs()` only.
-- `detectForVideo` needs a strictly-increasing timestamp for the detector's lifetime; we use a
-  private monotonic counter (`detectorTs`), never reset, never used for trip logic.
-- `performance.now()` is used only to pace the frame loop near 8 fps and to measure the health
-  stall — real-time measurement, not trip or cue timing. `Date.now()` is never used (lint-enforced).
-
-## Verified so far
-
-`npm run typecheck`, `npm run lint`, `npm test` (33 tests) and `npm run build` all pass. The build
-bundles the model and wasm as local assets.
-
-## Still needs a browser + the demo clip
-
-Real detection cannot be hand-verified until `fixtures/demo-drive/video.mp4` exists (team
-recording, committed by Rohit via Git LFS — see `docs/KNOWN_GAPS.md`). Must be H.264 (not HEVC)
-and not HDR, landscape. Once it lands, run in Chrome on the demo laptop and confirm:
-
-1. Boxes track people/vehicles; the forward-region trapezoid is drawn.
-2. A pedestrian walking into the lower-center fires one `pedestrianNearby`; the overlay highlights
-   that box in red and shows the reason.
-3. Disabling the detector removes the alert (acceptance test "Frame-based alert").
-4. Forcing inference to stall for 2 s shows "Camera paused" and emits `cameraHealth { ok: false }`.
-
-Then fill in `HOLDOUT.md` from a second clip with no retuning.
-
-Integration updates: frames are downscaled to at most 640 pixels wide before inference; repeated video timestamps are skipped. Restart/stop disposes the previous runtime; reset clears cached speed and frame identity. Real-footage and holdout acceptance remain pending.
+Production replay now offers a local fallback about every three seconds without new advice, provided no speech request is active. A current stable object supplies a short image-side attention cue; with no stable objects the fallback asks the learner to observe/scan. This runs even while Claude is pending or silent, without extra model calls. The arbiter still controls actual playback, spacing and mute, so three seconds is a target rather than a speech-start guarantee. Reminders are explicitly labeled periodic local reminders in the timeline, not Claude outputs. Forward-camera person detections are called people, not assumed pedestrians. Road geometry is unknown: no instruction to continue straight is inferred. `periodicReminders: false` is available for isolated module tests.

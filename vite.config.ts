@@ -44,11 +44,27 @@ function devApi(): Plugin {
           // The handlers compare Origin with this URL, so the scheme must be the real one.
           const scheme = (req.socket as TLSSocket).encrypted ? 'https' : 'http';
           const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
+          let size = 0;
+          for await (const chunk of req) {
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            size += bytes.length;
+            if (size > 800_000) {
+              res.statusCode = 413;
+              res.end();
+              return;
+            }
+            chunks.push(bytes);
+          }
+          const aborted = new AbortController();
+          req.on('aborted', () => aborted.abort());
+          res.on('close', () => {
+            if (!res.writableEnded) aborted.abort();
+          });
           const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && chunks.length > 0;
           const request = new Request(`${scheme}://${host}${req.url}`, {
             method: req.method,
             headers,
+            signal: aborted.signal,
             body: hasBody ? Buffer.concat(chunks) : undefined,
           });
           const response = (await handler(request)) as Response;

@@ -1,4 +1,5 @@
 export const CARTESIA_VERSION = '2026-08-14';
+export const SPEECH_SPEED = 1.15;
 export const SONIC_MODEL = 'sonic-3.6';
 export const VOICE_ID = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
 export const SAMPLE_RATE = 24000;

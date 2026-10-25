@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createBus } from '../../shared/bus.ts';
-import { createVisionModule } from '../../app/src/vision/index.ts';
+import { createVisionModule } from '../../app/src/vision/localRuntime.ts';
 import { createMapModule } from '../../app/src/map/index.ts';
 import { feature, lDrive } from '../../app/src/map/testing.ts';
 import { createMockMap } from '../../shared/mocks/map.ts';
@@ -115,7 +115,7 @@ it.each(['mock', 'real', 'all-real'] as const)(
     };
     const modules = [
       map,
-      mapMode === 'all-real' ? createVisionModule() : createMockVision(),
+      mapMode === 'all-real' ? createVisionModule() : createMockVision({ legacy: true }),
       voice,
       createArbiter(),
     ];

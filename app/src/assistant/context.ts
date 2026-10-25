@@ -1,3 +1,4 @@
+import type { CvScene } from '../../../shared/cvScene.ts';
 // The trip summary sent with every Claude request, built from bus events. Pure, so the exact
 // payload (and what it leaves out: video, images, coordinates) is unit-tested.
 import type { TripContext } from '../../../shared/assistant.ts';
@@ -15,6 +16,7 @@ export type AheadFeature = {
 };
 
 export type Memory = {
+  localScene?: CvScene;
   speedMps?: number;
   muted: boolean;
   lines: Array<{ tripMs: number; text: string }>;
@@ -57,6 +59,12 @@ export function buildContext(memory: Memory, nowMs: number): TripContext {
     })),
     upcoming,
   };
+  if (
+    memory.localScene &&
+    nowMs >= memory.localScene.tripMs &&
+    nowMs - memory.localScene.tripMs <= 3000
+  )
+    context.localScene = memory.localScene;
   if (memory.speedMps !== undefined) context.speedMps = Math.round(memory.speedMps * 10) / 10;
   return context;
 }

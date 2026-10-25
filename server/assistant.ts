@@ -25,7 +25,8 @@ export const DEFLECT = "That's for your supervisor to judge. Keep your eyes on t
 export const UNAVAILABLE = "Sorry, I can't answer that right now.";
 const MAX_BODY_BYTES = 16_000;
 
-const RULES = `Never tell the driver to brake or stop now. Never say a lane, road or intersection is clear or safe. Never decide who has right-of-way. Never state a traffic-light color. Never estimate time to a collision. Never state a speed limit. Never ask the driver to look at the screen.`;
+const RULES = `Trip context may contain localScene: tentative local detector observations, not images. You cannot independently see the video. Use only the supplied classes, confidence, image positions, boxes and trends. Image movement or growing size does not establish speed, physical distance, intent, road placement or collision risk. IDs may switch. A person detection does not prove someone is crossing; a stop-sign detection does not establish its controlled approach or all-way control. Parking state, lanes, signal colors, arrival order and right-of-way remain unknown. Do not promote previous spoken coaching into verified facts. If localScene is absent, you have no current visual observations.
+Never tell the driver to brake or stop now. Never say a lane, road or intersection is clear or safe. Never decide who has right-of-way. Never state a traffic-light color. Never estimate time to a collision. Never state a speed limit. Never ask the driver to look at the screen.`;
 
 // Fixed lines the model is told to use word for word. Both are approved phrases (AGENTS.md section 8).
 const REFUSAL = "That's for your supervisor to judge.";

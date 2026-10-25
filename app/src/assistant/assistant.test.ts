@@ -211,3 +211,28 @@ describe('trip summary', () => {
     expect(buildContext(memory, 130_000).recentLines).toEqual([{ agoS: 30, text: 'new' }]);
   });
 });
+
+it('sends fresh local scene descriptions with questions and clears them on pause/reset', async () => {
+  const s = setup(() => ok({ text: 'Keep the car in view.' }));
+  await s.module.start(s.ctx);
+  const scene = { tripMs: 10000, objects: [] };
+  s.bus.emit('visionScene', scene);
+  s.ask('what should I watch');
+  await settle();
+  expect(s.bodies[0]).toMatchObject({ context: { localScene: scene } });
+  s.advance(3001);
+  s.ask('what about now');
+  await settle();
+  expect(s.bodies[1]?.context).not.toHaveProperty('localScene');
+  s.bus.emit('visionScene', { ...scene, tripMs: 13001 });
+  s.bus.emit('tripState', { state: 'paused' });
+  s.ask('what was there');
+  await settle();
+  expect(s.bodies[2]?.context).not.toHaveProperty('localScene');
+  s.bus.emit('visionScene', { ...scene, tripMs: 13001 });
+  s.bus.emit('tripReset', { tripMs: 0 });
+  s.ask('what is there');
+  await settle();
+  expect(s.bodies[3]?.context).not.toHaveProperty('localScene');
+  s.module.stop();
+});

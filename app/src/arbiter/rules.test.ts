@@ -632,3 +632,106 @@ describe('assistant', () => {
     expect(h.speaks).toEqual([]);
   });
 });
+
+it('queues generated coaching ahead of map cues and repeats the latest coaching', () => {
+  const advice = {
+    id: 'vlm-1',
+    text: 'Watch for cyclists beside parked cars.',
+    reason: 'Cyclist beside cars.',
+    tripMs: 1000,
+    expiresMs: 11000,
+  };
+  let result = step(initialState(true), { type: 'advice', advice }, 1000);
+  const spoken = result.effects.find((effect) => effect.type === 'speak');
+  expect(spoken).toMatchObject({ request: { origin: 'vision', text: advice.text, priority: 1 } });
+  if (spoken?.type !== 'speak') throw new Error('Expected coaching speech');
+  result = step(result.state, { type: 'speechEnded', id: spoken.request.id }, 2000);
+  result = step(result.state, { type: 'voice', kind: 'repeat' }, 4000);
+  expect(result.effects.find((effect) => effect.type === 'speak')).toMatchObject({
+    request: { origin: 'vision', text: advice.text },
+  });
+});
+
+it('replaces queued old coaching but does not let expired advice discard valid queued work', () => {
+  const advice = {
+    id: 'first',
+    text: 'Scan curb edges for pedestrians.',
+    reason: 'People beside the road.',
+    tripMs: 0,
+    expiresMs: 10000,
+  };
+  let result = step(initialState(false), { type: 'advice', advice }, 0);
+  result = step(
+    result.state,
+    {
+      type: 'advice',
+      advice: { ...advice, id: 'second', text: 'Check mirrors for nearby cyclists.' },
+    },
+    1000,
+  );
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['second']);
+  expect(result.effects).toContainEqual(
+    expect.objectContaining({
+      type: 'decision',
+      decision: expect.objectContaining({ sourceId: 'first', action: 'dropped' }),
+    }),
+  );
+  result = step(
+    result.state,
+    { type: 'advice', advice: { ...advice, id: 'expired', expiresMs: 500 } },
+    1000,
+  );
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['second']);
+});
+
+it('prioritizes a requested answer over queued vision coaching and preserves delivery', () => {
+  const advice = {
+    id: 'v1',
+    text: 'Keep the car on your left in view.',
+    reason: 'Car on left.',
+    tripMs: 0,
+    expiresMs: 10000,
+  };
+  let result = step(initialState(false), { type: 'advice', advice }, 0);
+  result = step(
+    result.state,
+    {
+      type: 'answer',
+      reply: {
+        id: 'a1',
+        queryId: 'q1',
+        text: 'Keep checking your mirrors.',
+        delivery: { emotion: 'calm', pace: 'slower' },
+        tripMs: 100,
+      },
+    },
+    100,
+  );
+  result = step(
+    result.state,
+    { type: 'advice', advice: { ...advice, id: 'v2', tripMs: 200 } },
+    200,
+  );
+  result = step(result.state, { type: 'tripState', state: 'playing' }, 300);
+  expect(result.effects.find((effect) => effect.type === 'speak')).toMatchObject({
+    request: { sourceId: 'a1', delivery: { emotion: 'calm', pace: 'slower' } },
+  });
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['v2']);
+});
+
+it('does not let a periodic fallback replace queued Claude coaching', () => {
+  const advice = {
+    id: 'claude-1',
+    text: 'Keep the car on your left in view.',
+    reason: 'Car on left.',
+    tripMs: 0,
+    expiresMs: 10000,
+  };
+  let result = step(initialState(false), { type: 'advice', advice }, 0);
+  result = step(
+    result.state,
+    { type: 'advice', advice: { ...advice, id: 'vision-fallback-2' } },
+    3000,
+  );
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['claude-1']);
+});

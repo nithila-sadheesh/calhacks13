@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createBus } from '../../../shared/bus.ts';
 import type { Events, ModuleContext } from '../../../shared/types.ts';
-import { createVisionModule } from './index.ts';
+import { createVisionModule } from './localRuntime.ts';
 const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock('./detector.ts', () => ({ loadDetector: mocks.load }));
 afterEach(() => {

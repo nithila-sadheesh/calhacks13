@@ -1,214 +1,355 @@
-// Tejas's vision module. Runs the MediaPipe detector on frames of the shared <video>, tracks
-// boxes, and raises `webcamAlert` / `cameraHealth` from real detections only (never a timestamp:
-// AGENTS.md rule 6). Publishes: webcamAlert, cameraHealth. Reads: video frames, clock, position
-// (speed), tripReset. UI slot: VisionOverlay. See docs/DESIGN.md, "Tejas: vision and overlay".
 import { log } from '../../../shared/log.ts';
 import type { AppModule, ModuleContext } from '../../../shared/types.ts';
-import { createAlertEngine } from './alerts.ts';
 import {
-  ENABLE_FOLLOWING_DISTANCE,
-  FRAME_INTERVAL_MS,
-  HEALTH_POLL_MS,
-  STALL_MS,
-} from './config.ts';
+  adviceKey,
+  parseCoachingResponse,
+  SCENE_MEMORY_MS,
+  type CoachingRequest,
+  type CoachingResponse,
+  type SceneMemory,
+} from '../../../shared/coaching.ts';
+import type { CvScene } from '../../../shared/cvScene.ts';
 import { loadDetector, type VisionDetector } from './detector.ts';
-import { bottomCenter, pointInForwardRegion } from './geometry.ts';
-import { visionStore, type OverlayDetection } from './store.ts';
-import { createTracker } from './tracker.ts';
+import { createTracker, type Track } from './tracker.ts';
+import { createSceneBuilder, sceneKey } from './cvScene.ts';
+import { fallbackAdvice } from './fallbackAdvice.ts';
+import { rememberScene } from './sceneMemory.ts';
+import { coachingStore, type CoachingDiagnostic } from './coachingStore.ts';
 
-export function createVisionModule(): AppModule {
-  let runtime: ReturnType<typeof createRuntime> | undefined;
+export const CV_INTERVAL_MS = 125;
+export const ANALYSIS_INTERVAL_MS = 3000;
+export const SCENE_REFRESH_MS = 5000;
+export const MAX_RESPONSE_AGE_MS = 8000;
+export const ADVICE_TTL_MS = 10000;
+
+async function analyze(input: CoachingRequest, signal: AbortSignal): Promise<CoachingResponse> {
+  const response = await fetch('/api/vision-advice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!response.ok)
+    throw new Error(
+      response.status === 503
+        ? 'Anthropic key is not configured. Restart the server after setting it.'
+        : `Coaching unavailable (HTTP ${response.status}).`,
+    );
+  const result = parseCoachingResponse(await response.json());
+  if (!result) throw new Error('Coaching response was invalid.');
+  return result;
+}
+
+export function createVisionModule(
+  options: {
+    periodicReminders?: boolean;
+    loadDetector?: () => Promise<VisionDetector>;
+    analyze?: (input: CoachingRequest, signal: AbortSignal) => Promise<CoachingResponse>;
+  } = {},
+): AppModule {
+  let cleanup: (() => void) | undefined;
+  let sequence = 0;
   return {
     name: 'vision',
     async start(ctx: ModuleContext) {
-      runtime?.stop();
-      const next = createRuntime(ctx);
-      runtime = next;
-      await next.start();
+      cleanup?.();
+      const tracker = createTracker();
+      const builder = createSceneBuilder();
+      let detector: VisionDetector | undefined;
+      let loadFailed = false;
+      let stopped = false;
+      let playing = ctx.source === 'live' ? false : !ctx.video.paused;
+      let version = 0;
+      let detectorMs = 0;
+      let lastTripMs: number | undefined;
+      let lastRequestMs = -Infinity;
+      let lastSentKey: string | undefined;
+      let controller: AbortController | undefined;
+      let sceneMemory: SceneMemory[] = [];
+      let previousScenes: CvScene[] = [];
+      const recent = new Map<string, number>();
+      let framesProcessed = 0;
+      let requestSequence = 0;
+      let lastAdviceMs: number | undefined;
+      let speakingId: string | undefined;
+      let fallbackTurn = 0;
+      const diagnostic = (id: number, changes: Partial<CoachingDiagnostic>) => {
+        const current = coachingStore.get();
+        coachingStore.set({
+          ...current,
+          diagnostics: current.diagnostics?.map((entry) =>
+            entry.id === id ? { ...entry, ...changes } : entry,
+          ),
+        });
+      };
+      coachingStore.set({ status: 'loadingCv' });
+      const reset = () => {
+        version++;
+        const pending =
+          coachingStore.get().diagnostics?.filter((entry) => entry.outcome === 'Pending') ?? [];
+        for (const entry of pending)
+          diagnostic(entry.id, { outcome: 'Cancelled: playback paused, ended or reset' });
+        controller?.abort();
+        controller = undefined;
+        tracker.reset();
+        builder.reset();
+        sceneMemory = [];
+        previousScenes = [];
+        recent.clear();
+        lastTripMs = undefined;
+        lastRequestMs = -Infinity;
+        lastSentKey = undefined;
+        framesProcessed = 0;
+        lastAdviceMs = undefined;
+        speakingId = undefined;
+        fallbackTurn = 0;
+        if (!stopped)
+          coachingStore.set({
+            status: detector ? 'watching' : loadFailed ? 'error' : 'loadingCv',
+            error: loadFailed
+              ? 'Local object detector is unavailable. Reload to retry.'
+              : undefined,
+            cvScene: undefined,
+            diagnostics: coachingStore.get().diagnostics,
+          });
+      };
+      const off = [
+        ctx.bus.on('speak', ({ id }) => {
+          speakingId = id;
+          lastAdviceMs = ctx.clock.nowMs();
+        }),
+        ctx.bus.on('speechEnded', ({ id }) => {
+          if (speakingId === id) speakingId = undefined;
+        }),
+        ctx.bus.on('tripReset', () => {
+          reset();
+          coachingStore.set({ ...coachingStore.get(), diagnostics: [] });
+        }),
+        ctx.bus.on('tripState', ({ state }) => {
+          playing = state === 'playing';
+          if (state !== 'playing') reset();
+        }),
+      ];
+      const timer: { current?: ReturnType<typeof setInterval> } = {};
+      cleanup = () => {
+        stopped = true;
+        reset();
+        if (timer.current) clearInterval(timer.current);
+        off.forEach((dispose) => dispose());
+        detector?.close();
+        detector = undefined;
+        coachingStore.reset();
+      };
+      try {
+        detector = await (options.loadDetector ?? loadDetector)();
+      } catch {
+        loadFailed = true;
+        if (!stopped)
+          coachingStore.set({
+            status: 'error',
+            error: 'Local object detector could not load. Check local model assets and reload.',
+          });
+        return;
+      }
+      if (stopped) {
+        detector.close();
+        detector = undefined;
+        return;
+      }
+      log('vision', 'detector loaded');
+      coachingStore.set({ status: 'watching' });
+      const tick = () => {
+        if (
+          stopped ||
+          !playing ||
+          !detector ||
+          ctx.video.paused ||
+          ctx.video.ended ||
+          ctx.video.readyState < 2 ||
+          !ctx.video.videoWidth
+        )
+          return;
+        const tripMs = ctx.clock.nowMs();
+        if (lastTripMs === tripMs) return;
+        lastTripMs = tripMs;
+        detectorMs += CV_INTERVAL_MS;
+        const began = performance.now();
+        let scene: CvScene;
+        let tracks: Track[];
+        try {
+          tracks = tracker.update(detector.detect(ctx.video, detectorMs));
+          scene = builder.update(tracks, tripMs);
+        } catch {
+          coachingStore.set({
+            ...coachingStore.get(),
+            status: 'error',
+            error: 'Local detection failed on this frame.',
+          });
+          return;
+        }
+        ctx.bus.emit('visionScene', scene);
+        framesProcessed++;
+        coachingStore.set({
+          ...coachingStore.get(),
+          cvScene: scene,
+          cvTracks: tracks.filter((track) =>
+            scene.objects.some((object) => object.id === track.id),
+          ),
+          cvFrames: framesProcessed,
+          cvLatencyMs: performance.now() - began,
+        });
+        if (lastAdviceMs === undefined) lastAdviceMs = tripMs;
+        if (options.periodicReminders !== false && !speakingId && tripMs - lastAdviceMs >= 3000) {
+          const text = fallbackAdvice(scene, fallbackTurn++);
+          lastAdviceMs = tripMs;
+          ctx.bus.emit('visionAdvice', {
+            id: `vision-fallback-${++sequence}`,
+            text,
+            reason: 'Periodic local observation reminder; no new Claude recommendation available.',
+            tripMs,
+            expiresMs: tripMs + 3000,
+          });
+        }
+        const key = sceneKey(scene);
+        if (
+          !scene.objects.length ||
+          controller ||
+          tripMs - lastRequestMs < ANALYSIS_INTERVAL_MS ||
+          (key === lastSentKey && tripMs - lastRequestMs < SCENE_REFRESH_MS)
+        )
+          return;
+        const mine = version;
+        const abort = new AbortController();
+        controller = abort;
+        lastRequestMs = tripMs;
+        lastSentKey = key;
+        sceneMemory = sceneMemory.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
+        previousScenes = previousScenes.filter((entry) => tripMs - entry.tripMs <= SCENE_MEMORY_MS);
+        for (const [text, time] of recent) if (tripMs - time > 20000) recent.delete(text);
+        const input: CoachingRequest = {
+          scene,
+          previousScenes: previousScenes.slice(-3),
+          sceneMemory,
+          recentAdvice: [...recent.keys()].slice(-3),
+        };
+        previousScenes = [...previousScenes, scene].slice(-3);
+        const started = performance.now();
+        const requestId = ++requestSequence;
+        coachingStore.set({
+          ...coachingStore.get(),
+          status: 'analyzing',
+          error: undefined,
+          diagnostics: [
+            ...(coachingStore.get().diagnostics ?? []),
+            {
+              id: requestId,
+              tripMs,
+              objects: scene.objects,
+              outcome: 'Pending',
+            },
+          ].slice(-30),
+        });
+        ctx.bus.emit('dataSent', {
+          destination: 'anthropic-vision',
+          tripMs,
+          summary: `Local CV scene with ${scene.objects.length} tracked objects submitted to Claude; no images, GPS or audio.`,
+        });
+        void (options.analyze ?? analyze)(
+          input,
+          AbortSignal.any([abort.signal, AbortSignal.timeout(13000)]),
+        )
+          .then((raw) => {
+            const result = parseCoachingResponse(raw);
+            diagnostic(requestId, {
+              latencyMs: performance.now() - started,
+              ...(result ? { response: result } : {}),
+              outcome: 'Discarded: playback paused, ended or reset',
+            });
+            if (
+              stopped ||
+              version !== mine ||
+              abort.signal.aborted ||
+              ctx.video.paused ||
+              ctx.video.ended
+            )
+              return;
+            const now = ctx.clock.nowMs();
+            if (now - tripMs > MAX_RESPONSE_AGE_MS) {
+              diagnostic(requestId, { outcome: 'Discarded: response older than 8 seconds' });
+              coachingStore.set({
+                ...coachingStore.get(),
+                status: 'watching',
+                reason: 'Previous coaching arrived too late; monitoring the current scene.',
+              });
+              return;
+            }
+            if (!result) throw new Error('Coaching response was invalid.');
+            sceneMemory = rememberScene(sceneMemory, result, tripMs);
+            if (result.sceneChanged) {
+              previousScenes = [];
+              recent.clear();
+            }
+            coachingStore.set({
+              ...coachingStore.get(),
+              status: 'ready',
+              message: result.shouldSpeak ? result.message : undefined,
+              reason: result.reason,
+              observations: result.observations,
+              uncertainties: result.uncertainties,
+              coachingPoint: result.coachingPoint,
+              frameTripMs: tripMs,
+              latencyMs: performance.now() - started,
+            });
+            if (!result.shouldSpeak) {
+              diagnostic(requestId, { outcome: 'Claude chose silence' });
+              return;
+            }
+            const normalized = adviceKey(result.message);
+            if (
+              [...recent].some(
+                ([text, time]) => adviceKey(text) === normalized && now - time < 20000,
+              )
+            ) {
+              diagnostic(requestId, { outcome: 'Suppressed: duplicate recommendation' });
+              return;
+            }
+            diagnostic(requestId, { outcome: 'Sent to arbiter (not confirmation of audio)' });
+            lastAdviceMs = now;
+            recent.set(result.message, now);
+            ctx.bus.emit('visionAdvice', {
+              id: `vision-advice-${++sequence}`,
+              text: result.message,
+              reason: result.reason,
+              tripMs,
+              expiresMs: tripMs + ADVICE_TTL_MS,
+            });
+          })
+          .catch((error: unknown) => {
+            diagnostic(requestId, {
+              latencyMs: performance.now() - started,
+              outcome: abort.signal.aborted
+                ? 'Cancelled: playback paused, ended or reset'
+                : error instanceof Error
+                  ? error.message
+                  : 'Coaching request failed',
+            });
+            if (!stopped && version === mine && !abort.signal.aborted)
+              coachingStore.set({
+                ...coachingStore.get(),
+                status: 'error',
+                error: error instanceof Error ? error.message : 'Coaching unavailable.',
+              });
+          })
+          .finally(() => {
+            if (controller === abort) controller = undefined;
+          });
+      };
+      timer.current = setInterval(tick, CV_INTERVAL_MS);
     },
     stop() {
-      runtime?.stop();
-      runtime = undefined;
+      cleanup?.();
+      cleanup = undefined;
     },
   };
 }
-
 export const visionModule = createVisionModule();
-
-function createRuntime(ctx: ModuleContext) {
-  const { bus, clock, video } = ctx;
-  const tracker = createTracker();
-  const alerts = createAlertEngine({ enableFollowingDistance: ENABLE_FOLLOWING_DISTANCE });
-
-  let detector: VisionDetector | undefined;
-  let rafId = 0;
-  let healthTimer: ReturnType<typeof setInterval> | undefined;
-  let offReset: (() => void) | undefined;
-  let offPosition: (() => void) | undefined;
-  let stopped = false;
-
-  let speedMps = 0;
-  let lastVideoTime: number | undefined;
-  // Monotonic timestamp for the detector only. Never reset (MediaPipe requires it to keep
-  // increasing for the detector's whole life) and never used for trip or alert timing.
-  let detectorTs = 0;
-  let lastInferWall = performance.now();
-  let healthOk = true;
-  // The box behind the current alert, kept lit until the alert's trip-time expiry.
-  let currentAlert: { trackId: number; reason: string; expiresMs: number } | undefined;
-
-  function publishHealth(ok: boolean, reason?: string): void {
-    if (ok === healthOk) return;
-    healthOk = ok;
-    bus.emit('cameraHealth', reason === undefined ? { ok } : { ok, reason });
-    const snap = visionStore.get();
-    visionStore.set({ ...snap, health: reason === undefined ? { ok } : { ok, reason } });
-    log('vision', `camera health ${ok ? 'ok' : 'down'}`, reason);
-  }
-
-  function clearState(): void {
-    speedMps = 0;
-    lastVideoTime = undefined;
-    tracker.reset();
-    alerts.reset();
-    currentAlert = undefined;
-    visionStore.reset();
-    // A reset means we are alive again; re-arm health without emitting a spurious transition.
-    healthOk = detector !== undefined;
-    if (!healthOk) {
-      visionStore.set({
-        ...visionStore.get(),
-        health: { ok: false, reason: 'detector unavailable' },
-      });
-    }
-    lastInferWall = performance.now();
-  }
-
-  function processFrame(): void {
-    if (stopped || !detector) return;
-    const playable = !video.paused && !video.ended && video.readyState >= 2 && video.videoWidth > 0;
-    if (!playable) {
-      // Paused or not ready: skip inference but keep the stall watchdog from firing.
-      lastInferWall = performance.now();
-      return;
-    }
-
-    // A stalled video must not count the same pedestrian frame four times.
-    if (lastVideoTime === video.currentTime) return;
-    lastVideoTime = video.currentTime;
-    detectorTs += FRAME_INTERVAL_MS;
-    let detections;
-    try {
-      detections = detector.detect(video, detectorTs);
-    } catch (e: unknown) {
-      log('vision', 'detectForVideo threw', e);
-      return;
-    }
-    lastInferWall = performance.now();
-
-    const tripMs = clock.nowMs();
-    const tracks = tracker.update(detections);
-    const result = alerts.update({ tracks, tripMs, speedMps });
-
-    if (result) {
-      currentAlert = {
-        trackId: result.trackId,
-        reason: result.alert.reason,
-        expiresMs: result.alert.expiresMs,
-      };
-      bus.emit('webcamAlert', result.alert);
-      log('vision', `alert ${result.alert.kind}`, result.alert.reason);
-    } else if (currentAlert && tripMs > currentAlert.expiresMs) {
-      currentAlert = undefined;
-    }
-
-    const overlay: OverlayDetection[] = tracks.map((t) => ({
-      id: t.id,
-      cls: t.cls,
-      score: t.score,
-      box: t.box,
-      inRegion: pointInForwardRegion(bottomCenter(t.box)),
-    }));
-    visionStore.set({
-      detections: overlay,
-      alertTrackId: currentAlert?.trackId ?? null,
-      alertReason: currentAlert?.reason ?? null,
-      health: { ok: healthOk },
-    });
-  }
-
-  function loop(): void {
-    if (stopped) return;
-    processFrame();
-    // rAF paces us near the display rate; the detector throttles itself by wall time below.
-    rafId = requestAnimationFrame(throttle);
-  }
-
-  // Keep inference near TARGET_FPS rather than the ~60 Hz of requestAnimationFrame.
-  let lastLoopWall = 0;
-  function throttle(): void {
-    if (stopped) return;
-    const now = performance.now();
-    if (now - lastLoopWall >= FRAME_INTERVAL_MS) {
-      lastLoopWall = now;
-      loop();
-    } else {
-      rafId = requestAnimationFrame(throttle);
-    }
-  }
-
-  function watchHealth(): void {
-    if (stopped) return;
-    const playing = !video.paused && !video.ended;
-    if (video.readyState < 2 || video.videoWidth === 0) {
-      if (playing) publishHealth(false, 'video unavailable');
-      return;
-    }
-    if (playing && performance.now() - lastInferWall > STALL_MS) {
-      publishHealth(false, 'inference stalled for over 2 s');
-      return;
-    }
-    publishHealth(true);
-  }
-
-  async function start(): Promise<void> {
-    offPosition = bus.on('position', (p) => {
-      speedMps = p.speedMps;
-    });
-    offReset = clock.onReset(() => clearState());
-
-    try {
-      detector = await loadDetector();
-    } catch (e: unknown) {
-      if (stopped) return;
-      log('vision', 'detector failed to load', e);
-      publishHealth(false, 'detector unavailable');
-      return;
-    }
-    if (stopped) {
-      detector.close();
-      detector = undefined;
-      return;
-    }
-
-    log('vision', 'detector loaded');
-    bus.emit('cameraHealth', { ok: true });
-    lastInferWall = performance.now();
-    lastLoopWall = 0;
-    healthTimer = setInterval(watchHealth, HEALTH_POLL_MS);
-    rafId = requestAnimationFrame(throttle);
-  }
-
-  function stop(): void {
-    stopped = true;
-    cancelAnimationFrame(rafId);
-    if (healthTimer) clearInterval(healthTimer);
-    offReset?.();
-    offPosition?.();
-    detector?.close();
-    detector = undefined;
-    visionStore.reset();
-  }
-
-  return { start, stop };
-}
