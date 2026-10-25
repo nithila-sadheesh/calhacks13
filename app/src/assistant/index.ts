@@ -36,6 +36,7 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
       let requested = new Set<string>();
       let controller = new AbortController();
       let answers = 0;
+      let answerVersion = 0;
 
       async function post(body: AssistantRequest, timeoutMs: number) {
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
@@ -51,6 +52,7 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
 
       async function answer(query: Events['voiceQuery']) {
         const mine = controller;
+        const mineAnswer = ++answerVersion;
         bus.emit('dataSent', {
           destination: 'claude',
           summary: `question: "${query.transcript}"`,
@@ -70,7 +72,7 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
           if (mine.signal.aborted) return;
           log('assistant', 'answer failed', String(e));
         }
-        if (mine !== controller) return;
+        if (mine !== controller || mineAnswer !== answerVersion) return;
         const event: Events['assistantReply'] = {
           id: `answer-${++answers}`,
           queryId: query.id,
@@ -115,6 +117,9 @@ export function createAssistantModule(fetcher: typeof fetch = (...a) => fetch(..
       }
 
       const offs = [
+        bus.on('voiceActivity', ({ active }) => {
+          if (active) answerVersion++;
+        }),
         bus.on('visionScene', (scene) => {
           memory.localScene = scene;
         }),

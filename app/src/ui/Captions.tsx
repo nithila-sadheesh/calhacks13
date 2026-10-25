@@ -15,6 +15,10 @@ export function Captions({ bus }: { bus: Bus }) {
     const clearIf = (id?: string) =>
       setCaption((current) => (id === undefined || current?.id === id ? undefined : current));
     const offs = [
+      bus.on('voiceActivity', ({ active }) => {
+        if (!active) return;
+        setCaption((current) => (current?.urgent ? current : undefined));
+      }),
       bus.on('speak', ({ id, text, priority }) => {
         clearTimeout(timer);
         setCaption({ id, text, urgent: priority === 0 });

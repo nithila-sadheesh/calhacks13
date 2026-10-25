@@ -116,7 +116,12 @@ export function createVoiceModule(): AppModule & {
       mic = createPushToTalk({
         bus: ctx.bus,
         clock: ctx.clock,
-        status: updateMic,
+        status: (status) => {
+          updateMic(status);
+          ctx.bus.emit('voiceActivity', {
+            active: status === 'connecting' || status === 'listening' || status === 'transcribing',
+          });
+        },
         onError: (error) => {
           microphoneError = microphoneSetupMessage(error);
           notifyDiagnostics();
@@ -134,6 +139,9 @@ export function createVoiceModule(): AppModule & {
           notifyDiagnostics();
         }),
         ctx.bus.on('speak', (request) => engine?.speak(request)),
+        ctx.bus.on('arbiterDecision', ({ action, speakId }) => {
+          if (action === 'interrupted' && speakId) engine?.interrupt(speakId);
+        }),
         ctx.bus.on('tripReset', () => {
           engine?.reset();
           mic?.cancel();

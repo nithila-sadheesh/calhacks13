@@ -173,6 +173,9 @@ export function createVoiceEngine(options: {
       item.timer = setTimeout(() => fallback(item), 1500);
       void transport.send(item.context, request.text, request.delivery).catch(() => fallback(item));
     },
+    interrupt(id: string) {
+      if (active?.request.id === id && active.request.priority > 0) finish(active, true);
+    },
     reset() {
       if (active) finish(active, true);
     },

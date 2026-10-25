@@ -8,6 +8,8 @@ import type {
 } from '../../../shared/types.ts';
 import {
   ALERT_COOLDOWN_MS,
+  PROACTIVE_GAP_MS,
+  CONVERSATION_QUIET_MS,
   ANSWER_TTL_MS,
   CAMERA_PAUSED,
   NOTHING_TO_REPEAT,
@@ -716,22 +718,91 @@ it('prioritizes a requested answer over queued vision coaching and preserves del
   expect(result.effects.find((effect) => effect.type === 'speak')).toMatchObject({
     request: { sourceId: 'a1', delivery: { emotion: 'calm', pace: 'slower' } },
   });
-  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['v2']);
+  expect(result.state.queue.map((item) => item.sourceId)).toEqual([]);
 });
 
-it('does not let a periodic fallback replace queued Claude coaching', () => {
-  const advice = {
-    id: 'claude-1',
-    text: 'Keep the car on your left in view.',
-    reason: 'Car on left.',
-    tripMs: 0,
-    expiresMs: 10000,
-  };
-  let result = step(initialState(false), { type: 'advice', advice }, 0);
-  result = step(
-    result.state,
-    { type: 'advice', advice: { ...advice, id: 'vision-fallback-2' } },
-    3000,
+const vision = (id: string, tripMs = 0) => ({
+  id,
+  text: 'Keep the car on your left in view.',
+  reason: 'Car on left.',
+  tripMs,
+  expiresMs: tripMs + 10000,
+});
+
+it('interrupts ordinary speech at microphone start and never resumes the interrupted thought', () => {
+  const h = new Harness();
+  h.send({ type: 'advice', advice: vision('old') }, 0);
+  h.send({ type: 'cue', cue: cue() }, 100);
+  h.send({ type: 'voiceActivity', active: true }, 200);
+  expect(h.currentId).toBeUndefined();
+  expect(h.state.queue).toEqual([]);
+  expect(h.decisions).toContainEqual(['old', 'interrupted', 'interrupted by user']);
+  h.send({ type: 'advice', advice: vision('during', 300) }, 300);
+  h.send({ type: 'query', id: 'q1' }, 400);
+  h.send({ type: 'voiceActivity', active: false }, 400);
+  h.send({ type: 'tick' }, 1000);
+  expect(h.speaks).toHaveLength(1);
+  h.send(
+    {
+      type: 'answer',
+      reply: {
+        id: 'a1',
+        queryId: 'q1',
+        text: 'Check your mirrors before changing position.',
+        tripMs: 1500,
+      },
+    },
+    1500,
   );
-  expect(result.state.queue.map((item) => item.sourceId)).toEqual(['claude-1']);
+  expect(h.speaks.at(-1)?.sourceId).toBe('a1');
+  h.end(2000);
+  h.send({ type: 'tick' }, 2000 + CONVERSATION_QUIET_MS);
+  expect(h.speaks.map((s) => s.sourceId)).toEqual(['old', 'a1']);
+  expect(h.state.queue).toEqual([]);
+});
+
+it('lets priority-zero warnings finish and break through a user turn', () => {
+  const h = new Harness();
+  h.send({ type: 'alert', alert: alert() }, 0);
+  const warningId = h.currentId;
+  h.send({ type: 'voiceActivity', active: true }, 100);
+  expect(h.currentId).toBe(warningId);
+  h.end(500);
+  h.send(
+    { type: 'alert', alert: alert({ id: 'new-alert', tripMs: 9000, expiresMs: 10500 }) },
+    9000,
+  );
+  expect(h.speaks.at(-1)?.sourceId).toBe('new-alert');
+  expect(h.speaks.at(-1)?.priority).toBe(0);
+});
+
+it('limits proactive advice frequency and leaves quiet time after a requested answer', () => {
+  const h = new Harness();
+  h.send({ type: 'advice', advice: vision('first') }, 0);
+  h.end(1000);
+  h.send({ type: 'advice', advice: vision('too-soon', 2000) }, 2000);
+  expect(h.decisions).toContainEqual(['too-soon', 'dropped', 'coaching cooldown']);
+  h.send({ type: 'advice', advice: vision('later', PROACTIVE_GAP_MS) }, PROACTIVE_GAP_MS);
+  expect(h.speaks.at(-1)?.sourceId).toBe('later');
+  h.end(PROACTIVE_GAP_MS + 1000);
+  h.send(
+    {
+      type: 'answer',
+      reply: { id: 'a1', queryId: 'q1', text: 'Check your mirrors.', tripMs: 20000 },
+    },
+    20000,
+  );
+  h.end(22000);
+  h.send({ type: 'cue', cue: cue({ earliestMs: 23000, expiresMs: 40000 }) }, 23000);
+  expect(h.decisions).toContainEqual(['cue-1', 'dropped', 'conversation has the floor']);
+});
+
+it('releases the floor when a new microphone attempt is cancelled instead of waiting for an obsolete answer', () => {
+  const h = new Harness();
+  h.send({ type: 'query', id: 'old-query' }, 0);
+  h.send({ type: 'voiceActivity', active: true }, 100);
+  h.send({ type: 'voiceActivity', active: false }, 200);
+  expect(h.state.pendingQueryId).toBeUndefined();
+  h.send({ type: 'advice', advice: vision('fresh', 10000) }, 10000);
+  expect(h.speaks.at(-1)?.sourceId).toBe('fresh');
 });

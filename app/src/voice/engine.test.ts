@@ -295,3 +295,20 @@ it('reports generated speech that times out instead of silently leaving text wit
   expect(s.error.mock.calls[0]?.[0]?.message).toContain('Speech could not be played');
   expect(s.started).not.toHaveBeenCalled();
 });
+
+it('cancels buffered audio and late chunks on a user interruption but preserves urgent clips', () => {
+  const s = setup();
+  s.speak();
+  const id = s.context();
+  s.receive({ id, type: 'chunk', samples: new Float32Array([0]) });
+  s.engine.interrupt('route');
+  expect(s.nodes[0]?.stop).toHaveBeenCalled();
+  expect(s.cancel).toHaveBeenCalledWith(id);
+  expect(s.ended).toHaveBeenCalledWith({ id: 'route', interrupted: true });
+  s.receive({ id, type: 'chunk', samples: new Float32Array([0]) });
+  expect(s.nodes).toHaveLength(1);
+  s.speak('urgent', { priority: 0, text: CLIP_TEXT.pedestrianNearby, clipKey: 'pedestrianNearby' });
+  s.engine.interrupt('urgent');
+  expect(s.nodes[1]?.stop).not.toHaveBeenCalled();
+  s.engine.stop();
+});

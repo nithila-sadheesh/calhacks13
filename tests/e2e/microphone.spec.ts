@@ -4,7 +4,7 @@ test.use({
   launchOptions: {
     args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
   },
-  permissions: ['microphone'],
+  permissions: ['microphone', 'camera'],
 });
 
 test('tap-to-talk keeps the full recording through a slow connection and sends it once', async ({
@@ -160,4 +160,83 @@ test('generated instructions reach real browser audio playback through Sonic', a
   await expect.poll(() => spoken.length, { timeout: 8000 }).toBeGreaterThan(0);
   await expect(page.getByText(/^First audible: \d+ ms$/)).toBeVisible();
   await expect(page.locator('.panel [role=alert]')).toHaveCount(0);
+});
+
+test('a user interruption stops guidance, gets an answer, and does not resume the old sentence', async ({
+  page,
+}) => {
+  await page.route('**/api/cartesia-token', (route) =>
+    route.fulfill({ json: { token: 'test-token' } }),
+  );
+  const answer = 'Check both sides and keep the sign in view.';
+  await page.route('**/api/assistant', async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      mode: 'answer',
+      question: 'What does that sign mean?',
+    });
+    await route.fulfill({ json: { text: answer } });
+  });
+  const lines: Array<{ id: string; text: string }> = [];
+  const cancelled: string[] = [];
+  await page.routeWebSocket('**/tts/websocket?*', (socket) => {
+    socket.onMessage((message) => {
+      if (typeof message !== 'string') return;
+      const request = JSON.parse(message) as {
+        context_id?: string;
+        transcript?: string;
+        cancel?: boolean;
+      };
+      if (!request.context_id) return;
+      if (request.cancel) {
+        cancelled.push(request.context_id);
+        return;
+      }
+      if (!request.transcript) return;
+      lines.push({ id: request.context_id, text: request.transcript });
+      // Guidance would last ten seconds without interruption; the answer is short.
+      const samples = request.transcript === answer ? 4800 : 240000;
+      const audio = Buffer.alloc(samples * 2);
+      for (let i = 0; i < samples; i++)
+        audio.writeInt16LE(Math.round(Math.sin((i * 2 * Math.PI * 440) / 24000) * 1000), i * 2);
+      socket.send(
+        JSON.stringify({
+          type: 'chunk',
+          context_id: request.context_id,
+          data: audio.toString('base64'),
+        }),
+      );
+      socket.send(JSON.stringify({ type: 'done', context_id: request.context_id }));
+    });
+  });
+  await page.routeWebSocket('**/stt/websocket?*', (socket) => {
+    socket.onMessage((message) => {
+      if (message !== 'finalize') return;
+      socket.send(
+        JSON.stringify({ type: 'transcript', is_final: true, text: 'What does that sign mean?' }),
+      );
+      socket.send(JSON.stringify({ type: 'flush_done' }));
+    });
+  });
+  await page.goto('/?mock=map,vision');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Start live drive' }).click();
+  await page.getByRole('button', { name: 'Start drive' }).click();
+  await expect(page.getByRole('button', { name: 'End drive' })).toBeVisible();
+  await expect.poll(() => lines.length, { timeout: 8000 }).toBe(1);
+  await expect(page.getByText(/^First audible: \d+ ms$/)).toBeVisible();
+  const orb = page.locator('.mic-orb');
+  await orb.click();
+  await expect(orb).toHaveAccessibleName('Listening… tap to send');
+  await expect.poll(() => cancelled).toContain(lines[0]!.id);
+  await expect(page.locator('.captions p')).toHaveText('Spoken lines appear here.');
+  await orb.click();
+  await expect
+    .poll(() => lines.map((line) => line.text))
+    .toEqual(['Stop sign ahead. Prepare for a complete stop.', answer]);
+  await page.waitForTimeout(3500);
+  expect(lines.map((line) => line.text)).toEqual([
+    'Stop sign ahead. Prepare for a complete stop.',
+    answer,
+  ]);
+  await page.getByRole('button', { name: 'End drive' }).click();
 });

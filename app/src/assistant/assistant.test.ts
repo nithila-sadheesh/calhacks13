@@ -236,3 +236,25 @@ it('sends fresh local scene descriptions with questions and clears them on pause
   expect(s.bodies[3]?.context).not.toHaveProperty('localScene');
   s.module.stop();
 });
+
+it('discards an older answer when the user interrupts with a new microphone turn', async () => {
+  let resolve!: (response: Response) => void;
+  let calls = 0;
+  const s = setup(() =>
+    ++calls === 1
+      ? new Promise<Response>((r) => {
+          resolve = r;
+        })
+      : ok({ text: 'Here is the new answer.' }),
+  );
+  await s.module.start(s.ctx);
+  s.ask('first question');
+  s.bus.emit('voiceActivity', { active: true });
+  s.bus.emit('voiceActivity', { active: false });
+  s.ask('new question');
+  await settle();
+  resolve(Response.json({ text: 'Old answer.' }));
+  await settle();
+  expect(s.of('assistantReply').map((reply) => reply.text)).toEqual(['Here is the new answer.']);
+  s.module.stop();
+});

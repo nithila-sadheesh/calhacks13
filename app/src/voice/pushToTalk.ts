@@ -160,7 +160,6 @@ export function createPushToTalk(options: {
           const kind = commandFromTranscript(transcript);
           current = undefined;
           close(session);
-          options.status('idle');
           if (kind) options.bus.emit('voiceCommand', { kind, transcript });
           else if (transcript)
             options.bus.emit('voiceQuery', {
@@ -168,6 +167,7 @@ export function createPushToTalk(options: {
               transcript,
               tripMs: options.clock.nowMs(),
             });
+          options.status('idle');
         },
         onError: () => fail(session, new VoiceSetupError('micConnection')),
       });

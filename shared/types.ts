@@ -120,6 +120,7 @@ export type Events = {
   voiceCommand: { kind: 'repeat' | 'mute' | 'unmute'; transcript: string }; // Nithila
   dataSent: DataSent; // Nithila (Cartesia), assistant (Claude)
   featureAhead: FeatureAhead; // Jeev
+  voiceActivity: { active: boolean }; // voice: microphone setup, recording or transcription
   voiceQuery: VoiceQuery; // Nithila
   assistantReply: AssistantReply; // assistant
   cueWording: CueWording; // assistant
