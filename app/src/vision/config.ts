@@ -37,6 +37,9 @@ export const ALERT_TTL_MS = 1500;
 // Camera health (docs/DESIGN.md task 7): no inference for this long while playing is a stall.
 export const STALL_MS = 2000;
 export const HEALTH_POLL_MS = 500;
+// Only report the camera down after this many consecutive bad polls, so a brief blip (for example
+// the camera hiccuping when the microphone starts) is not announced as "Camera paused".
+export const HEALTH_FAIL_POLLS = 6;
 
 // Tracker (docs/DESIGN.md task 3): match boxes by overlap, smooth position and size.
 export const TRACK_IOU_MATCH = 0.3;

@@ -8,6 +8,7 @@ import { createAlertEngine } from './alerts.ts';
 import {
   ENABLE_FOLLOWING_DISTANCE,
   FRAME_INTERVAL_MS,
+  HEALTH_FAIL_POLLS,
   HEALTH_POLL_MS,
   STALL_MS,
 } from './config.ts';
@@ -54,6 +55,8 @@ function createRuntime(ctx: ModuleContext) {
   let detectorTs = 0;
   let lastInferWall = performance.now();
   let healthOk = true;
+  // Consecutive bad health polls; the camera is only reported down once this reaches the threshold.
+  let unhealthyPolls = 0;
   // The box behind the current alert, kept lit until the alert's trip-time expiry.
   let currentAlert: { trackId: number; reason: string; expiresMs: number } | undefined;
 
@@ -81,6 +84,7 @@ function createRuntime(ctx: ModuleContext) {
         health: { ok: false, reason: 'detector unavailable' },
       });
     }
+    unhealthyPolls = 0;
     lastInferWall = performance.now();
   }
 
@@ -160,15 +164,20 @@ function createRuntime(ctx: ModuleContext) {
   function watchHealth(): void {
     if (stopped) return;
     const playing = !video.paused && !video.ended;
-    if (video.readyState < 2 || video.videoWidth === 0) {
-      if (playing) publishHealth(false, 'video unavailable');
-      return;
+    let bad: string | undefined;
+    if (playing && (video.readyState < 2 || video.videoWidth === 0)) bad = 'video unavailable';
+    else if (playing && performance.now() - lastInferWall > STALL_MS)
+      bad = 'inference stalled for over 2 s';
+
+    if (bad) {
+      // Tolerate brief blips (e.g. the camera hiccuping when the microphone starts): only report
+      // down after the condition has persisted for several consecutive polls.
+      unhealthyPolls += 1;
+      if (unhealthyPolls >= HEALTH_FAIL_POLLS) publishHealth(false, bad);
+    } else {
+      unhealthyPolls = 0;
+      publishHealth(true);
     }
-    if (playing && performance.now() - lastInferWall > STALL_MS) {
-      publishHealth(false, 'inference stalled for over 2 s');
-      return;
-    }
-    publishHealth(true);
   }
 
   async function start(): Promise<void> {
@@ -194,6 +203,7 @@ function createRuntime(ctx: ModuleContext) {
     log('vision', 'detector loaded');
     bus.emit('cameraHealth', { ok: true });
     lastInferWall = performance.now();
+    unhealthyPolls = 0;
     lastLoopWall = 0;
     healthTimer = setInterval(watchHealth, HEALTH_POLL_MS);
     rafId = requestAnimationFrame(throttle);

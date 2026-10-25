@@ -46,7 +46,9 @@ it('does not turn a frozen video frame into repeated detections and reports reco
   const module = createVisionModule();
   try {
     await module.start(s.ctx);
-    await vi.advanceTimersByTimeAsync(3000);
+    // A frozen frame is a stall, but the camera is only reported down after the stall persists for
+    // several consecutive health polls (debounce), so advance well past that window.
+    await vi.advanceTimersByTimeAsync(6000);
     expect(detect).toHaveBeenCalledTimes(1);
     expect(s.health.at(-1)?.ok).toBe(false);
     s.video.currentTime = 3;
